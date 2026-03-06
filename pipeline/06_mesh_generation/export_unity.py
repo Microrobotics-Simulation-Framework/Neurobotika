@@ -5,8 +5,26 @@ import subprocess
 from pathlib import Path
 
 import click
-import pymeshlab
-import trimesh
+
+
+def compute_lod_ratios(lod_levels: int) -> list[float]:
+    """Compute decimation ratios for each LOD level.
+
+    LOD0 = 1.0 (full), LOD1 = 0.5, LOD2 = 0.1, then halving.
+    """
+    ratios = [1.0]
+    if lod_levels >= 2:
+        ratios.append(0.5)
+    if lod_levels >= 3:
+        ratios.append(0.1)
+    for i in range(3, lod_levels):
+        ratios.append(0.1 / (2 ** (i - 2)))
+    return ratios
+
+
+def compute_target_faces(original_faces: int, ratio: float, minimum: int = 100) -> int:
+    """Compute target face count for a given decimation ratio."""
+    return max(int(original_faces * ratio), minimum)
 
 
 @click.command()
@@ -16,6 +34,9 @@ import trimesh
 @click.option("--upload-s3", default=None, help="S3 URI to upload results (optional)")
 def main(input_path: str, output_dir: str, lod_levels: int, upload_s3: str):
     """Export mesh as GLB with LOD variants for Unity WebGL."""
+    import pymeshlab
+    import trimesh
+
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -24,26 +45,17 @@ def main(input_path: str, output_dir: str, lod_levels: int, upload_s3: str):
     original_faces = len(mesh.faces)
     print(f"  Original: {len(mesh.vertices):,} vertices, {original_faces:,} faces")
 
-    # LOD decimation ratios
-    lod_ratios = [1.0]  # LOD0 = full resolution
-    if lod_levels >= 2:
-        lod_ratios.append(0.5)  # LOD1 = 50%
-    if lod_levels >= 3:
-        lod_ratios.append(0.1)  # LOD2 = 10%
-    for i in range(3, lod_levels):
-        lod_ratios.append(0.1 / (2 ** (i - 2)))  # Further LODs halve each time
+    lod_ratios = compute_lod_ratios(lod_levels)
 
     exported = []
     for i, ratio in enumerate(lod_ratios):
-        target_faces = max(int(original_faces * ratio), 100)
+        target_faces = compute_target_faces(original_faces, ratio)
         output_file = out / f"csf_system_lod{i}.glb"
 
         if ratio < 1.0:
-            # Decimate using pymeshlab
             ms = pymeshlab.MeshSet()
             ms.load_new_mesh(input_path)
             ms.meshing_decimation_quadric_edge_collapse(targetfacenum=target_faces)
-            # Export to temp STL then convert to GLB via trimesh
             temp_stl = out / f"_temp_lod{i}.stl"
             ms.save_current_mesh(str(temp_stl))
             lod_mesh = trimesh.load(str(temp_stl))
@@ -55,7 +67,6 @@ def main(input_path: str, output_dir: str, lod_levels: int, upload_s3: str):
         print(f"  LOD{i}: {len(lod_mesh.faces):,} faces ({ratio:.0%}) -> {output_file.name}")
         exported.append(output_file)
 
-    # Upload to S3 if requested
     if upload_s3:
         print(f"\nUploading to {upload_s3}...")
         for f in exported:

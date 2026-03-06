@@ -46,6 +46,15 @@ training = [
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.backends._legacy:_Backend"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "needs_nibabel: test requires nibabel",
+    "needs_trimesh: test requires trimesh",
+    "needs_pymeshlab: test requires pymeshlab",
+    "needs_skimage: test requires scikit-image",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

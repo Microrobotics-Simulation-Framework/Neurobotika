@@ -4,8 +4,49 @@
 from pathlib import Path
 
 import click
-import nibabel as nib
 import numpy as np
+
+
+def merge_brain_spine(
+    brain_data: np.ndarray,
+    spine_data: np.ndarray,
+) -> tuple[np.ndarray, dict]:
+    """Merge brain and spinal CSF label maps. Brain labels take priority.
+
+    Args:
+        brain_data: Integer label map from brain segmentation.
+        spine_data: Integer label map from spine segmentation.
+
+    Returns:
+        Tuple of (merged label map, stats dict with voxel counts).
+
+    Raises:
+        ValueError if shapes don't match.
+    """
+    if brain_data.shape != spine_data.shape:
+        raise ValueError(
+            f"Shape mismatch: brain {brain_data.shape} vs spine {spine_data.shape}"
+        )
+
+    merged = brain_data.copy()
+    spine_fills = (spine_data > 0) & (brain_data == 0)
+    merged[spine_fills] = spine_data[spine_fills]
+
+    stats = {
+        "brain_voxels": int((brain_data > 0).sum()),
+        "spine_voxels": int(spine_fills.sum()),
+        "overlap_voxels": int(((brain_data > 0) & (spine_data > 0)).sum()),
+        "total_voxels": int((merged > 0).sum()),
+    }
+
+    return merged, stats
+
+
+def check_connectivity(data: np.ndarray) -> int:
+    """Count the number of connected components in a binary mask."""
+    from scipy.ndimage import label as cc_label
+    _, n_components = cc_label(data > 0)
+    return n_components
 
 
 @click.command()
@@ -20,12 +61,9 @@ import numpy as np
     help="Z-slice range for the foramen magnum junction (auto-detected if not specified)",
 )
 def main(brain_labels: str, spine_labels: str, output: str, junction_z_range: tuple):
-    """Merge brain and spinal CSF labels at the foramen magnum.
+    """Merge brain and spinal CSF labels at the foramen magnum."""
+    import nibabel as nib
 
-    In the junction zone, brain labels take priority (they include manually
-    refined cisterna magna and foramen magnum structures). The spine labels
-    fill in below the junction zone.
-    """
     print(f"Loading brain labels: {brain_labels}")
     brain_img = nib.load(brain_labels)
     brain_data = np.asarray(brain_img.dataobj, dtype=np.int32)
@@ -34,38 +72,22 @@ def main(brain_labels: str, spine_labels: str, output: str, junction_z_range: tu
     spine_img = nib.load(spine_labels)
     spine_data = np.asarray(spine_img.dataobj, dtype=np.int32)
 
-    if brain_data.shape != spine_data.shape:
-        print("ERROR: Shape mismatch. Both must be in MNI space at the same resolution.")
-        print(f"  Brain: {brain_data.shape}, Spine: {spine_data.shape}")
+    try:
+        merged, stats = merge_brain_spine(brain_data, spine_data)
+    except ValueError as e:
+        print(f"ERROR: {e}")
         raise SystemExit(1)
 
-    # Merge: brain labels take priority, spine fills gaps
-    merged = brain_data.copy()
-    spine_mask = (spine_data > 0) & (brain_data == 0)
-    merged[spine_mask] = spine_data[spine_mask]
+    voxel_vol = float(np.prod(brain_img.header.get_zooms()[:3]))
+    for key, val in stats.items():
+        vol = val * voxel_vol / 1000.0
+        print(f"  {key}: {val:>10,} ({vol:.1f} mL)")
 
-    # Report
-    brain_voxels = (brain_data > 0).sum()
-    spine_voxels = spine_mask.sum()
-    overlap_voxels = ((brain_data > 0) & (spine_data > 0)).sum()
-    total_voxels = (merged > 0).sum()
-
-    voxel_vol = np.prod(brain_img.header.get_zooms()[:3])
-    print(f"\n  Brain CSF voxels:    {brain_voxels:>10,} ({brain_voxels * voxel_vol / 1000:.1f} mL)")
-    print(f"  Spine CSF voxels:    {spine_voxels:>10,} ({spine_voxels * voxel_vol / 1000:.1f} mL)")
-    print(f"  Overlap voxels:      {overlap_voxels:>10,} (brain labels kept)")
-    print(f"  Total merged voxels: {total_voxels:>10,} ({total_voxels * voxel_vol / 1000:.1f} mL)")
-
-    # Check connectivity at junction
-    # A simple check: does the merged label map have a single connected CSF component?
-    from scipy.ndimage import label as cc_label
-
-    n_components, _ = cc_label(merged > 0)
+    n_components = check_connectivity(merged)
     if n_components == 1:
         print(f"\n  [OK] Single connected CSF component")
     else:
         print(f"\n  [WARN] {n_components} disconnected components found.")
-        print("  The brain-spine junction may have a gap. Check in 3D Slicer.")
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     nib.save(nib.Nifti1Image(merged, brain_img.affine, brain_img.header), output)
