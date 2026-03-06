@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSF Digital Twin — Project Plan</title>
+<style>
+  :root {
+    --blue-dark: #1a3a5c;
+    --blue-mid: #2563a8;
+    --blue-light: #dbeafe;
+    --blue-pale: #f0f7ff;
+    --green: #166534;
+    --green-light: #dcfce7;
+    --amber: #92400e;
+    --amber-light: #fef3c7;
+    --red: #991b1b;
+    --red-light: #fee2e2;
+    --gray: #374151;
+    --gray-light: #f9fafb;
+    --gray-border: #e5e7eb;
+    --font: 'Segoe UI', Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    font-size: 14px;
+    color: var(--gray);
+    background: #f5f8fc;
+    line-height: 1.6;
+  }
+
+  .page {
+    max-width: 960px;
+    margin: 0 auto;
+    background: white;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+  }
+
+  /* HEADER */
+  .header {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2563a8 100%);
+    color: white;
+    padding: 40px 48px 32px;
+  }
+  .header .label {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 8px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+  .header .subtitle {
+    font-size: 15px;
+    opacity: 0.85;
+    max-width: 600px;
+  }
+  .header .meta {
+    margin-top: 20px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .header .meta span {
+    font-size: 12px;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* BODY */
+  .body { padding: 40px 48px; }
+
+  /* SECTION */
+  .section { margin-bottom: 44px; }
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--blue-dark);
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--blue-mid);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .num {
+    background: var(--blue-mid);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* PIPELINE OVERVIEW */
+  .pipeline {
+    display: flex;
+    gap: 0;
+    margin-bottom: 32px;
+    border: 1px solid var(--gray-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .pipeline-step {
+    flex: 1;
+    padding: 16px 12px;
+    background: var(--gray-light);
+    border-right: 1px solid var(--gray-border);
+    text-align: center;
+    position: relative;
+  }
+  .pipeline-step:last-child { border-right: none; }
+  .pipeline-step .step-num {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--blue-mid);
+    margin-bottom: 4px;
+  }
+  .pipeline-step .step-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--blue-dark);
+    line-height: 1.3;
+  }
+  .pipeline-step.active {
+    background: var(--blue-dark);
+  }
+  .pipeline-step.active .step-num { color: #93c5fd; }
+  .pipeline-step.active .step-name { color: white; }
+
+  /* CARDS */
+  .card {
+    border: 1px solid var(--gray-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .card-header {
+    padding: 14px 18px;
+    background: var(--blue-pale);
+    border-bottom: 1px solid var(--gray-border);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .card-header .badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .badge-free { background: var(--green-light); color: var(--green); }
+  .badge-tool { background: var(--blue-light); color: var(--blue-dark); }
+  .badge-manual { background: var(--amber-light); color: var(--amber); }
+  .badge-gap { background: var(--red-light); color: var(--red); }
+
+  .card-header .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--blue-dark);
+    margin-bottom: 2px;
+  }
+  .card-header .card-sub {
+    font-size: 12px;
+    color: #6b7280;
+  }
+  .card-body {
+    padding: 14px 18px;
+    font-size: 13.5px;
+  }
+  .card-body p { margin-bottom: 8px; }
+  .card-body p:last-child { margin-bottom: 0; }
+
+  /* INFO ROWS */
+  .info-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 4px 12px;
+    font-size: 13px;
+    margin-bottom: 5px;
+    align-items: start;
+  }
+  .info-label {
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 12px;
+    padding-top: 1px;
+  }
+  .info-value { color: var(--gray); }
+
+  /* LINKS */
+  a { color: var(--blue-mid); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .link-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--blue-light);
+    color: var(--blue-dark);
+    border: 1px solid #bfdbfe;
+    text-decoration: none;
+  }
+  .link-btn:hover { background: #bfdbfe; text-decoration: none; }
+  .link-btn.green { background: var(--green-light); color: var(--green); border-color: #bbf7d0; }
+  .link-btn.green:hover { background: #bbf7d0; }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  th {
+    background: var(--blue-dark);
+    color: white;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--gray-border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--gray-light); }
+  tr:last-child td { border-bottom: none; }
+
+  /* NOTICE BOXES */
+  .notice {
+    border-radius: 7px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 13.5px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .notice-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .notice.info { background: var(--blue-pale); border: 1px solid #bfdbfe; }
+  .notice.warn { background: var(--amber-light); border: 1px solid #fcd34d; }
+  .notice.success { background: var(--green-light); border: 1px solid #86efac; }
+  .notice strong { display: block; margin-bottom: 3px; }
+
+  /* STEP BLOCKS */
+  .step-block {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    align-items: flex-start;
+  }
+  .step-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--blue-mid);
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-content { flex: 1; }
+  .step-content h4 { font-size: 14px; color: var(--blue-dark); margin-bottom: 4px; }
+  .step-content p { font-size: 13px; color: var(--gray); }
+
+  /* FOOTER */
+  .footer {
+    background: var(--blue-dark);
+    color: rgba(255,255,255,0.6);
+    padding: 20px 48px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* DIVIDER */
+  .divider { height: 1px; background: var(--gray-border); margin: 8px 0 16px; }
+
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin: 2px;
+    background: #e5e7eb;
+    color: #374151;
+  }
+
+  @media print {
+    .page { box-shadow: none; }
+    body { background: white; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="label">Project Plan · Independent Research</div>
+    <h1>CSF System Digital Twin<br>Construction Plan</h1>
+    <div class="subtitle">
+      A reproducible pipeline for building a high-fidelity 3D model of the complete human cerebrospinal fluid system — ventricles, subarachnoid spaces, spinal canal, and all connecting foramina and apertures.
+    </div>
+    <div class="meta">
+      <span>📅 March 2026</span>
+      <span>🔓 All resources open-access / freely available</span>
+      <span>🎓 UTwente library access noted where relevant</span>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <!-- PIPELINE OVERVIEW -->
+    <div class="section">
+      <div class="section-title"><div class="num">→</div> Pipeline at a Glance</div>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="step-num">Phase 1</div>
+          <div class="step-name">Source Data Acquisition</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">Phase 2</div>
+          <div class="step-name">Automated ML Segmentation</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">Phase 3</div>
+          <div class="step-name">Manual Refinement</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">Phase 4</div>
+          <div class="step-name">Mesh &amp; Model Assembly</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">Phase 5</div>
+          <div class="step-name">Validation &amp; (Optional) Custom Model</div>
+        </div>
+      </div>
+
+      <div class="notice info">
+        <div class="notice-icon">ℹ️</div>
+        <div>
+          <strong>Access summary</strong>
+          All primary datasets are freely downloadable with no institutional affiliation required. Tools are fully open-source. Paper PDFs are open-access or accessible via Universiteit Twente's library off-campus portal (login with your student credentials at <a href="https://www.utwente.nl/en/service-portal/university-library/find-access-literature/off-campus-access" target="_blank">utwente.nl/library</a>).
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: DATASETS -->
+    <div class="section">
+      <div class="section-title"><div class="num">1</div> Source Imaging Datasets</div>
+
+      <!-- MGH 100um -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="badge badge-free">✓ Freely available — no account required</div>
+          </div>
+          <div>
+            <div class="card-title">MGH 100 µm Ex Vivo Brain (Edlow et al., 2019)</div>
+            <div class="card-sub">Primary anatomical reference · Highest resolution whole-brain MRI dataset in existence</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>The definitive reference for your ventricular geometry. A post-mortem human brain scanned at 7T with 100 µm isotropic resolution — 1,000× more detailed than a standard clinical MRI. Reveals ventricular walls, aqueduct, cisterns, and foraminal openings with unprecedented clarity. Released for educational and investigational use with no restrictions beyond citation.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Resolution</span><span class="info-value">100 µm isotropic (also available at 200 µm and 500 µm for lighter workflows)</span></div>
+          <div class="info-row"><span class="info-label">Coverage</span><span class="info-value">Whole brain, ex vivo (no spinal cord)</span></div>
+          <div class="info-row"><span class="info-label">Format</span><span class="info-value">NIfTI (.nii.gz), also in MNI stereotactic space</span></div>
+          <div class="info-row"><span class="info-label">Size</span><span class="info-value">~2 TB per flip angle (synthesised FLASH25 volume is much smaller)</span></div>
+          <div class="info-row"><span class="info-label">Best use</span><span class="info-value">Manual segmentation reference for foramina, cisterns, aqueduct, and 4th ventricle outlets</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://openneuro.org/datasets/ds002179" target="_blank">⬇ Download — OpenNeuro (ds002179)</a>
+            <a class="link-btn" href="https://datadryad.org/resource/doi:10.5061/dryad.119f80q" target="_blank">⬇ Download — Dryad</a>
+            <a class="link-btn" href="https://www.nature.com/articles/s41597-019-0254-8" target="_blank">📄 Paper (Open Access)</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- BigBrain -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="badge badge-free">✓ Freely available — FTP / EBRAINS</div>
+          </div>
+          <div>
+            <div class="card-title">BigBrain (Amunts et al., 2013)</div>
+            <div class="card-sub">Histological reference · 20 µm cell-body stained 3D reconstruction</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>A 3D reconstruction of 7,404 histological sections at 20 µm resolution — close to individual neuron size. Useful as a supplementary anatomical reference for identifying tissue boundaries adjacent to CSF spaces, and for cross-validating ventricular and cisternal geometry. Available under a non-commercial research/education licence; accessible to anyone without institutional login.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Resolution</span><span class="info-value">20 µm histological; volumetric downloads at 100, 200, 300, 400 µm (MNI-registered)</span></div>
+          <div class="info-row"><span class="info-label">Format</span><span class="info-value">NIfTI and MINC; surfaces in STL, gii, WaveFront-OBJ</span></div>
+          <div class="info-row"><span class="info-label">Licence</span><span class="info-value">Non-commercial research &amp; education use — free to use for your project</span></div>
+          <div class="info-row"><span class="info-label">Best use</span><span class="info-value">Supplementary cross-reference; co-registration with MGH 100 µm data</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://bigbrainproject.org" target="_blank">🌐 BigBrain Project</a>
+            <a class="link-btn green" href="https://ebrains.eu/service/human-brain-atlas" target="_blank">⬇ Download — EBRAINS</a>
+            <a class="link-btn" href="https://www.science.org/doi/10.1126/science.1235381" target="_blank">📄 Paper (2013)</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spine Generic -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="badge badge-free">✓ Freely available — Zenodo</div>
+          </div>
+          <div>
+            <div class="card-title">Spine Generic Dataset + PAM50 Template (Cohen-Adad et al., 2021)</div>
+            <div class="card-sub">Spinal cord reference · 260-subject multi-site MRI dataset with PAM50 atlas</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>The standard open-access dataset for spinal cord MRI, collected across 42 centres worldwide. Includes the PAM50 template, which is a standardised spinal cord + spinal canal atlas from C1 to S5. This is the backbone for your spinal SAS geometry — the canal segmentation minus the cord segmentation gives you the spinal subarachnoid space as a 3D volume. Full T1w, T2w, diffusion, and magnetization transfer protocols included.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Subjects</span><span class="info-value">260 healthy adults across GE, Philips, Siemens (42 centres)</span></div>
+          <div class="info-row"><span class="info-label">Atlas</span><span class="info-value">PAM50 template includes spinal cord + CSF canal segmentations from C1 to S5</span></div>
+          <div class="info-row"><span class="info-label">Format</span><span class="info-value">NIfTI (BIDS-organised); processed via Spinal Cord Toolbox</span></div>
+          <div class="info-row"><span class="info-label">Licence</span><span class="info-value">Fully open access — no institutional requirement</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://doi.org/10.5281/zenodo.4299148" target="_blank">⬇ Single Subject — Zenodo</a>
+            <a class="link-btn green" href="https://github.com/spine-generic/data-multi-subject" target="_blank">⬇ Multi-Subject — GitHub</a>
+            <a class="link-btn" href="https://www.nature.com/articles/s41597-021-00941-8" target="_blank">📄 Paper (Open Access)</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lumbosacral -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="badge badge-free">✓ Freely available — Scientific Data</div>
+          </div>
+          <div>
+            <div class="card-title">Lumbosacral MRI Dataset — Enhanced Nerve Root Resolution (2024)</div>
+            <div class="card-sub">Spinal SAS lower region · CISS sequence with CSF &amp; nerve root segmentation</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>14 healthy adults imaged with CISS, DESS, and T2-TSE sequences specifically designed to highlight the cauda equina and lumbosacral nerve roots within the spinal subarachnoid space. Includes manual annotations of dura, CSF, and nerve roots from L1–S2 — precisely the anatomy that is hardest to recover from the spine generic dataset. Published with 3D Slicer segmentations and Blender models.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Coverage</span><span class="info-value">Lumbosacral spine (L1–S2), spinal SAS, nerve roots, dura</span></div>
+          <div class="info-row"><span class="info-label">Sequences</span><span class="info-value">CISS, DESS, T2-TSE — CSF-optimised</span></div>
+          <div class="info-row"><span class="info-label">Licence</span><span class="info-value">Open access (Scientific Data / CC licence)</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://www.nature.com/articles/s41597-024-03919-4" target="_blank">📄 Paper + Data Download</a>
+            <a class="link-btn" href="https://github.com/Joshua-M-maker/SpineNerveModelGenerator" target="_blank">💻 GitHub (Blender scripts)</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SECTION 2: ML TOOLS -->
+    <div class="section">
+      <div class="section-title"><div class="num">2</div> Automated Segmentation Tools (ML)</div>
+
+      <div class="notice warn">
+        <div class="notice-icon">⚠️</div>
+        <div>
+          <strong>Important: what ML can and cannot do for this task</strong>
+          Existing models automate the large CSF spaces well (ventricles, bulk subarachnoid CSF, spinal canal). None currently segment the foramina, cisterns, aqueduct, or small connecting channels automatically. Plan for significant manual work in Phase 3 for those structures.
+        </div>
+      </div>
+
+      <!-- SynthSeg -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">ML Tool — Brain</div></div>
+          <div>
+            <div class="card-title">SynthSeg 2.0 (FreeSurfer)</div>
+            <div class="card-sub">Contrast-agnostic whole-brain segmentation · Best automation for ventricular system</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>The strongest automated segmentation tool for brain CSF spaces. Segments lateral ventricles, 3rd ventricle, 4th ventricle, and extraventricular CSF (label 24 in the aseg atlas) from MRI of any contrast or resolution without retraining. Integrated directly into FreeSurfer — just one command. Run it on the MGH 100 µm dataset (at reduced resolution) or on your own in vivo T1 scan as a starting geometry.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">What it segments</span><span class="info-value">Lateral ventricles (L+R), 3rd ventricle, 4th ventricle, choroid plexus, extraventricular CSF, cortical parcellation</span></div>
+          <div class="info-row"><span class="info-label">What it misses</span><span class="info-value">Cerebral aqueduct, foramina of Luschka/Magendie, individual basal cisterns, spinal cord</span></div>
+          <div class="info-row"><span class="info-label">Input</span><span class="info-value">Any MRI scan (.nii/.nii.gz/.mgz), any contrast, any resolution</span></div>
+          <div class="info-row"><span class="info-label">Install</span><span class="info-value">Bundled in FreeSurfer ≥7.3 (free, Linux/macOS/Windows via WSL)</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://github.com/BBillot/SynthSeg" target="_blank">💻 GitHub (code + model)</a>
+            <a class="link-btn green" href="https://surfer.nmr.mgh.harvard.edu/fswiki/SynthSeg" target="_blank">📖 FreeSurfer Wiki</a>
+            <a class="link-btn" href="https://www.sciencedirect.com/science/article/pii/S1361841523000506" target="_blank">📄 Paper</a>
+          </div>
+          <div style="margin-top:10px; font-size:12.5px; color:#6b7280;">
+            <strong>Run command:</strong> <code style="background:#f3f4f6; padding:2px 6px; border-radius:3px;">mri_synthseg --i input.nii.gz --o seg.nii.gz --parc --robust --vol volumes.csv</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- TotalSpineSeg -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">ML Tool — Spine</div></div>
+          <div>
+            <div class="card-title">TotalSpineSeg (NeuroPoly Lab, 2024)</div>
+            <div class="card-sub">Full spinal column + canal segmentation · Derives spinal SAS automatically</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>nnU-Net based pipeline for automatic instance segmentation of all vertebrae, intervertebral discs, spinal cord, and spinal canal in MRI. Critical for your project: it outputs both a spinal cord mask AND a spinal canal mask separately — the space between them is your spinal subarachnoid space. Works on arbitrary MRI contrasts and orientations.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">What it segments</span><span class="info-value">All vertebrae (C1–sacrum), IVDs, spinal cord, spinal canal (= dura boundary)</span></div>
+          <div class="info-row"><span class="info-label">Spinal SAS</span><span class="info-value">Computed as: spinal canal mask minus spinal cord mask</span></div>
+          <div class="info-row"><span class="info-label">Install</span><span class="info-value"><code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">pip install totalspineseg nnunetv2</code></span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://github.com/neuropoly/totalspineseg" target="_blank">💻 GitHub</a>
+            <a class="link-btn green" href="https://pypi.org/project/totalspineseg/" target="_blank">📦 PyPI</a>
+            <a class="link-btn" href="https://zenodo.org/records/13894354" target="_blank">📄 Paper / Zenodo</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCT -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">ML Tool — Spine (complementary)</div></div>
+          <div>
+            <div class="card-title">Spinal Cord Toolbox (SCT) v6+</div>
+            <div class="card-sub">Full spinal cord analysis suite · PAM50 atlas registration · Validated CSA measurements</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Comprehensive open-source suite for spinal cord MRI processing. Includes validated deep learning segmentation of the cord and canal, registration to the PAM50 template, and white/grey matter atlas labelling. Use alongside TotalSpineSeg — SCT provides more rigorously validated cross-sectional area measurements and atlas-based level labelling from C1 down to the conus.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Key features</span><span class="info-value">Cord segmentation, canal segmentation, PAM50 registration, level labelling, CSA metrics</span></div>
+          <div class="info-row"><span class="info-label">Install</span><span class="info-value">Conda/pip — all platforms. See documentation.</span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://spinalcordtoolbox.com" target="_blank">🌐 Official Site + Docs</a>
+            <a class="link-btn green" href="https://github.com/spinalcordtoolbox/spinalcordtoolbox" target="_blank">💻 GitHub</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- nnU-Net -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">ML Framework — Custom Training</div></div>
+          <div>
+            <div class="card-title">nnU-Net (Isensee et al., 2021)</div>
+            <div class="card-sub">Self-configuring segmentation framework · Use to train custom models on your corrected labels</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>The gold standard framework for training custom medical image segmentation models. After you produce manually corrected segmentations in Phase 3, nnU-Net lets you train a new model on those labels — creating a reusable, subject-agnostic CSF segmentation model that could be a genuine contribution to the field. It automatically configures architecture, patch size, and training strategy from your dataset. No ML expertise required beyond running the scripts.</p>
+          <div class="divider"></div>
+          <div class="info-row"><span class="info-label">Use case (here)</span><span class="info-value">Train on your manually corrected CSF+foramina labels to produce a reusable model</span></div>
+          <div class="info-row"><span class="info-label">Install</span><span class="info-value"><code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">pip install nnunetv2</code></span></div>
+          <div class="link-row">
+            <a class="link-btn green" href="https://github.com/MIC-DKFZ/nnUNet" target="_blank">💻 GitHub</a>
+            <a class="link-btn" href="https://www.nature.com/articles/s41592-020-01008-z" target="_blank">📄 Paper (Nature Methods)</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SECTION 3: MANUAL REFINEMENT -->
+    <div class="section">
+      <div class="section-title"><div class="num">3</div> Manual Segmentation &amp; Refinement</div>
+
+      <div class="notice warn">
+        <div class="notice-icon">⚠️</div>
+        <div>
+          <strong>This phase is unavoidable — and is the core scientific contribution of your project</strong>
+          No existing ML model segments the cerebral aqueduct, foramen of Monro, foramina of Luschka, foramen of Magendie, or individual basal cisterns. These must be manually delineated using the MGH 100 µm dataset as your anatomical reference. Plan for significant time investment here; this is also what makes the resulting model novel.
+        </div>
+      </div>
+
+      <p style="margin-bottom:16px; font-size:13.5px;">The structures requiring manual work, in order of difficulty:</p>
+
+      <table>
+        <tr>
+          <th>Structure</th>
+          <th>Difficulty</th>
+          <th>Notes</th>
+        </tr>
+        <tr>
+          <td>Lateral ventricles (L + R)</td>
+          <td><span style="color:var(--green); font-weight:600;">Low</span> — SynthSeg handles this</td>
+          <td>Verify and correct SynthSeg output in 3D Slicer</td>
+        </tr>
+        <tr>
+          <td>3rd ventricle</td>
+          <td><span style="color:var(--green); font-weight:600;">Low</span> — SynthSeg handles this</td>
+          <td>Thin structure; verify lateral walls carefully</td>
+        </tr>
+        <tr>
+          <td>Cerebral aqueduct (of Sylvius)</td>
+          <td><span style="color:var(--amber); font-weight:600;">Medium</span> — manual required</td>
+          <td>~1.5 mm diameter; visible at 100 µm but needs careful slice-by-slice tracing</td>
+        </tr>
+        <tr>
+          <td>4th ventricle</td>
+          <td><span style="color:var(--amber); font-weight:600;">Medium</span> — SynthSeg partial</td>
+          <td>Complex tent-shaped geometry; verify lateral recesses</td>
+        </tr>
+        <tr>
+          <td>Foramen of Magendie (median aperture)</td>
+          <td><span style="color:var(--amber); font-weight:600;">Medium</span> — manual required</td>
+          <td>Midline opening from 4th ventricle to cisterna magna; ~5 mm</td>
+        </tr>
+        <tr>
+          <td>Foramina of Luschka (lateral apertures, bilateral)</td>
+          <td><span style="color:var(--red); font-weight:600;">Hard</span> — manual required</td>
+          <td>~2–3 mm; lateral recesses of 4th ventricle; most challenging structure</td>
+        </tr>
+        <tr>
+          <td>Foramina of Monro (interventricular, bilateral)</td>
+          <td><span style="color:var(--amber); font-weight:600;">Medium</span> — manual required</td>
+          <td>Connects lateral ventricles to 3rd ventricle; visible at 100 µm</td>
+        </tr>
+        <tr>
+          <td>Basal cisterns (cisterna magna, prepontine, ambient, etc.)</td>
+          <td><span style="color:var(--red); font-weight:600;">Hard</span> — manual required</td>
+          <td>Ill-defined boundaries; use perimesencephalic anatomy as landmarks</td>
+        </tr>
+        <tr>
+          <td>Cerebral subarachnoid space (convexity, sulci)</td>
+          <td><span style="color:var(--amber); font-weight:600;">Medium</span> — SynthSeg label 24 + refine</td>
+          <td>Extract from FreeSurfer aseg label 24; refine sulcal depths</td>
+        </tr>
+        <tr>
+          <td>Spinal subarachnoid space (cervical to sacral)</td>
+          <td><span style="color:var(--green); font-weight:600;">Low–Medium</span> — TotalSpineSeg</td>
+          <td>Canal − cord = SAS; verify at foramen magnum junction</td>
+        </tr>
+        <tr>
+          <td>Foramen magnum junction (cranio-spinal transition)</td>
+          <td><span style="color:var(--red); font-weight:600;">Hard</span> — manual required</td>
+          <td>Critical connection point; brain and spinal datasets must be co-registered and joined here</td>
+        </tr>
+      </table>
+
+      <div style="margin-top:20px;">
+        <div class="card">
+          <div class="card-header">
+            <div><div class="badge badge-tool">Segmentation Tool</div></div>
+            <div>
+              <div class="card-title">3D Slicer</div>
+              <div class="card-sub">Free, open-source medical image analysis and segmentation</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <p>The recommended tool for all manual segmentation work. Load the MGH 100 µm NIfTI file, use the Segment Editor module to paint CSF structures slice-by-slice, and export as 3D surface meshes (STL or OBJ). Has built-in surface smoothing, boolean operations, and mesh export. The lumbosacral dataset paper used 3D Slicer v5.4.0 for all its segmentations.</p>
+            <div class="link-row">
+              <a class="link-btn green" href="https://www.slicer.org" target="_blank">⬇ Download 3D Slicer (free)</a>
+              <a class="link-btn" href="https://slicer.readthedocs.io/en/latest/user_guide/modules/segmenteditor.html" target="_blank">📖 Segment Editor Docs</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: MESH + MODEL ASSEMBLY -->
+    <div class="section">
+      <div class="section-title"><div class="num">4</div> Mesh Generation &amp; Model Assembly</div>
+
+      <p style="margin-bottom:16px; font-size:13.5px;">Once all segmentation labels are finalised, convert them to 3D surface or volumetric meshes suitable for visualisation, simulation, or further analysis.</p>
+
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">Meshing Tool</div></div>
+          <div>
+            <div class="card-title">SVMTK / mri2fem-II</div>
+            <div class="card-sub">Python · Convert MRI segmentations to finite-element meshes of CSF spaces</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Built specifically for this use case: converting MRI-derived brain surface meshes into finite element meshes of the subarachnoid space and ventricular system for computational modelling (e.g., CSF flow simulation using FEniCS). The mri2fem-II book chapter directly demonstrates meshing the SAS + ventricles from a brain surface triangulation. Fully open source.</p>
+          <div class="link-row">
+            <a class="link-btn green" href="https://github.com/SVMTK/SVMTK" target="_blank">💻 SVMTK GitHub</a>
+            <a class="link-btn" href="https://link.springer.com/chapter/10.1007/978-3-032-00679-0_3" target="_blank">📄 mri2fem-II Chapter</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">Meshing / Visualisation</div></div>
+          <div>
+            <div class="card-title">Blender (free) + MeshLab (free)</div>
+            <div class="card-sub">Surface mesh cleanup, boolean union, visualisation</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Use MeshLab for mesh cleaning (removing self-intersections, decimation, remeshing). Use Blender for final assembly, boolean operations to join brain SAS with ventricular cavities, and high-quality rendering. The lumbosacral spine paper used Blender v4.0.2 for its 3D model construction. Both tools are free and do not require institutional access.</p>
+          <div class="link-row">
+            <a class="link-btn green" href="https://www.blender.org" target="_blank">⬇ Blender</a>
+            <a class="link-btn green" href="https://www.meshlab.net" target="_blank">⬇ MeshLab</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div><div class="badge badge-tool">Registration Tool</div></div>
+          <div>
+            <div class="card-title">ANTs (Advanced Normalization Tools)</div>
+            <div class="card-sub">Co-register brain and spinal datasets at the cranio-spinal junction</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Critical for joining your brain-derived CSF geometry with the spinal cord dataset. ANTs provides robust nonlinear registration between different MRI datasets and to standard spaces (MNI, PAM50). Needed specifically to align the 4th ventricle / cisterna magna region with the cervical spinal canal at the foramen magnum. Fully open-source, widely used.</p>
+          <div class="link-row">
+            <a class="link-btn green" href="https://github.com/ANTsX/ANTs" target="_blank">💻 ANTs GitHub</a>
+            <a class="link-btn green" href="https://github.com/ANTsX/ANTsPy" target="_blank">💻 ANTsPy (Python interface)</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 5: ATLASES -->
+    <div class="section">
+      <div class="section-title"><div class="num">5</div> Anatomical Reference Atlases</div>
+      <p style="margin-bottom:16px; font-size:13.5px;">Use these to guide manual segmentation decisions, label anatomical structures, and cross-validate your boundaries.</p>
+
+      <table>
+        <tr>
+          <th>Atlas / Resource</th>
+          <th>What It Provides</th>
+          <th>Access</th>
+        </tr>
+        <tr>
+          <td><strong>NextBrain</strong> (Iglesias et al., 2025)</td>
+          <td>333-structure probabilistic atlas from 5 whole brain hemispheres; companion Bayesian segmentation tool for MRI</td>
+          <td><a href="https://www.nature.com/articles/s41586-025-09708-2" target="_blank">Open access paper + code</a> · UT library for full PDF</td>
+        </tr>
+        <tr>
+          <td><strong>HumanBrainAtlas (HBA)</strong></td>
+          <td>In vivo MRI + histology combined; up to 800 named structures; useful for brainstem/posterior fossa landmarks near 4th ventricle outlets</td>
+          <td><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC10516788/" target="_blank">PMC — free access</a></td>
+        </tr>
+        <tr>
+          <td><strong>PAM50 Spinal Cord Template</strong></td>
+          <td>Standardised spinal cord template C1–S5; bundled with Spinal Cord Toolbox; includes grey/white matter atlas and vertebral levels</td>
+          <td>Bundled in SCT — <a href="https://spinalcordtoolbox.com" target="_blank">free download</a></td>
+        </tr>
+        <tr>
+          <td><strong>Allen Human Brain Atlas</strong></td>
+          <td>Comprehensive anatomical annotations + gene expression; useful for brainstem subregion identification near aqueduct</td>
+          <td><a href="https://human.brain-map.org" target="_blank">brain-map.org — free</a></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- SECTION 6: STEP BY STEP -->
+    <div class="section">
+      <div class="section-title"><div class="num">6</div> Step-by-Step Workflow</div>
+
+      <div class="step-block">
+        <div class="step-circle">1</div>
+        <div class="step-content">
+          <h4>Download datasets</h4>
+          <p>Get the MGH 100 µm brain from OpenNeuro (ds002179) — start with the synthesised FLASH25 volume or the 200 µm downsampled version to keep file sizes manageable. Download the Spine Generic single-subject dataset from Zenodo. Optionally download the BigBrain 200 µm volume from EBRAINS for reference.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">2</div>
+        <div class="step-content">
+          <h4>Install tools</h4>
+          <p>Install FreeSurfer ≥7.3 (includes SynthSeg), Spinal Cord Toolbox, and 3D Slicer. Install TotalSpineSeg via pip. Install ANTsPy via pip. All free, all Linux/macOS/Windows (SCT and FreeSurfer work best on Linux or WSL2 on Windows).</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">3</div>
+        <div class="step-content">
+          <h4>Run SynthSeg on brain data</h4>
+          <p>Run <code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">mri_synthseg</code> on the MGH 100 µm data (resampled to 1 mm first, or run on a companion in vivo T1 scan). Extract ventricles (labels 4, 5, 14, 15, 43, 44) and extraventricular CSF (label 24) from <code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">aseg.mgz</code>. This gives you the automated bootstrap for all major ventricular cavities.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">4</div>
+        <div class="step-content">
+          <h4>Run TotalSpineSeg + SCT on spinal data</h4>
+          <p>Run TotalSpineSeg on the Spine Generic T2w image to get cord + canal segmentations. Run SCT's <code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">sct_deepseg_sc</code> and <code style="background:#f3f4f6; padding:1px 5px; border-radius:3px;">sct_register_to_template</code> to register to PAM50. Compute spinal SAS = canal − cord.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">5</div>
+        <div class="step-content">
+          <h4>Manual segmentation in 3D Slicer (Phase 3 — the core work)</h4>
+          <p>Load the MGH 100 µm volume into 3D Slicer. Using the Segment Editor, manually trace: cerebral aqueduct (axial series), foramen of Monro (coronal), 4th ventricle lateral recesses, foramen of Magendie (sagittal midline), and foramina of Luschka (axial oblique). Separately delineate each named cistern. Export as NIfTI label maps.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">6</div>
+        <div class="step-content">
+          <h4>Co-register brain and spinal datasets</h4>
+          <p>Use ANTs to register the brain dataset to MNI space. Register the PAM50 spine to the same MNI space. Join at the foramen magnum: the cisterna magna segmentation from the brain side should seamlessly connect with the C1 spinal canal segmentation from the spine side. This junction requires careful manual verification.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">7</div>
+        <div class="step-content">
+          <h4>Generate meshes</h4>
+          <p>Export all label maps as surface meshes from 3D Slicer (Model Maker module) or using SVMTK. Clean meshes in MeshLab (remove self-intersections, smooth, decimate). Assemble the complete CSF system (ventricles + brain SAS + spinal SAS + connecting channels) as a single watertight mesh in Blender using boolean union operations.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">8</div>
+        <div class="step-content">
+          <h4>(Optional) Train a custom nnU-Net model</h4>
+          <p>Convert your finalised label maps into nnU-Net training format. Train a model on your corrected segmentations — you'll likely need 10–20 labelled scans for reasonable performance. This is an optional but high-value step that would produce a reusable, publicly releasable tool.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 7: ACCESS NOTES -->
+    <div class="section">
+      <div class="section-title"><div class="num">7</div> Access Notes — Independent vs UTwente</div>
+
+      <div class="notice success">
+        <div class="notice-icon">✅</div>
+        <div>
+          <strong>Everything you need is independently accessible.</strong>
+          All datasets (MGH 100 µm via OpenNeuro/Dryad, BigBrain via FTP/EBRAINS, Spine Generic via Zenodo) are freely available to anyone — no institutional login, no paywall, no request process. All software tools are open-source with pip/conda installs.
+        </div>
+      </div>
+
+      <div class="notice info">
+        <div class="notice-icon">🎓</div>
+        <div>
+          <strong>UTwente helps with: papers and journals</strong>
+          Some of the key papers (Nature, Scientific Data, Nature Methods) are open-access themselves. For any that are paywalled, UTwente students can access them via the off-campus portal at <a href="https://www.utwente.nl/en/service-portal/university-library/find-access-literature/off-campus-access" target="_blank">utwente.nl/library/off-campus</a> using S-number login. The UT subscribes to Elsevier, Nature/Springer, and most major publishers. You can also install the <strong>Lean Library browser extension</strong> which automatically detects UT-accessible content.
+        </div>
+      </div>
+
+      <table>
+        <tr>
+          <th>Resource</th>
+          <th>Access Without UTwente?</th>
+          <th>UTwente Helps?</th>
+        </tr>
+        <tr>
+          <td>MGH 100 µm dataset (OpenNeuro)</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, no login</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>BigBrain dataset (EBRAINS/FTP)</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, open</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>Spine Generic dataset (Zenodo)</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, no login</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>Lumbosacral spine dataset</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free (Scientific Data)</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>SynthSeg / FreeSurfer</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, open-source</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>TotalSpineSeg / SCT / nnU-Net</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, pip install</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>3D Slicer / MeshLab / Blender / ANTs</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Free, open-source</span></td>
+          <td>N/A</td>
+        </tr>
+        <tr>
+          <td>Key papers (Nature, Sci Data, etc.)</td>
+          <td>Some open-access, some paywalled</td>
+          <td><span style="color:var(--blue-mid); font-weight:600;">✓ UT library off-campus access</span></td>
+        </tr>
+        <tr>
+          <td>NextBrain atlas (Nature, Nov 2025)</td>
+          <td>Open-access paper</td>
+          <td><span style="color:var(--green); font-weight:600;">✓ Freely available</span></td>
+        </tr>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <span>CSF Digital Twin Project Plan · Independent Research · March 2026</span>
+    <span>All listed resources are open-access or freely downloadable</span>
+  </div>
+
+</div>
+</body>
+</html>
