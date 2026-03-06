@@ -1,0 +1,51 @@
+[project]
+name = "neurobotika"
+version = "0.1.0"
+description = "Pipeline for constructing a 3D mesh of the human CSF system"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+dependencies = [
+    # Neuroimaging I/O
+    "nibabel>=5.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+
+    # SynthSeg (standalone, no full FreeSurfer needed)
+    # Install via: pip install synthseg  OR  clone from GitHub
+    # See pipeline/02_brain_segmentation/README.md
+
+    # Spine segmentation
+    "totalspineseg>=0.3",
+
+    # Image registration
+    "antspyx>=0.4",
+
+    # Mesh processing
+    "trimesh>=4.0",
+    "pymeshlab>=2023.12",
+    "pyvista>=0.43",
+
+    # Utilities
+    "click>=8.0",
+    "tqdm>=4.60",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1",
+]
+training = [
+    "nnunetv2>=2.2",
+    "torch>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

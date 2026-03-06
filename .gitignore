@@ -205,3 +205,66 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# === Neurobotika Project ===
+
+# Large data files (MRI datasets, segmentations, meshes)
+data/raw/
+data/segmentations/
+data/meshes/
+data/references/
+data/nnunet/
+*.nii
+*.nii.gz
+*.mgz
+*.mnc
+*.stl
+*.obj
+*.ply
+*.fbx
+*.glb
+*.gltf
+
+# Unity
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/[Rr]ecordings/
+unity/WebGLBuild/
+unity/*.csproj
+unity/*.unityproj
+unity/*.sln
+unity/*.suo
+unity/*.tmp
+unity/*.user
+unity/*.userprefs
+unity/*.pidb
+unity/*.booproj
+unity/*.svd
+unity/*.pdb
+unity/*.mdb
+unity/*.opendb
+unity/*.VC.db
+unity/Assets/AssetStoreTools*
+unity/Assets/Plugins/Editor/JetBrains*
+
+# Unity WebGL build output in web/
+web/unity/
+
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfplan
+infra/terraform.tfvars
+
+# SynthSeg model weights
+SynthSeg/
+*.h5
+*.hdf5
