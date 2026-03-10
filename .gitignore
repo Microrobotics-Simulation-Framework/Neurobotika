@@ -264,6 +264,9 @@ infra/*.tfstate.backup
 infra/*.tfplan
 infra/terraform.tfvars
 
+# Environment files (contain secrets / account-specific values)
+infra/.env
+
 # SynthSeg model weights
 SynthSeg/
 *.h5

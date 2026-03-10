@@ -22,3 +22,25 @@ output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (for cache invalidation)"
   value       = module.cdn.distribution_id
 }
+
+# --- Pipeline outputs (only when enable_pipeline = true) ---
+
+output "ecr_repository_urls" {
+  description = "ECR repository URLs for Docker images"
+  value       = var.enable_pipeline ? module.ecr[0].repository_urls : {}
+}
+
+output "gpu_job_queue_arn" {
+  description = "AWS Batch GPU job queue ARN"
+  value       = var.enable_pipeline ? module.batch[0].gpu_job_queue_arn : ""
+}
+
+output "cpu_job_queue_arn" {
+  description = "AWS Batch CPU job queue ARN"
+  value       = var.enable_pipeline ? module.batch[0].cpu_job_queue_arn : ""
+}
+
+output "state_machine_arn" {
+  description = "Step Functions pipeline state machine ARN"
+  value       = var.enable_pipeline ? module.step_functions[0].state_machine_arn : ""
+}

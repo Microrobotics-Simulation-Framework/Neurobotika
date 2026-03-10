@@ -1,0 +1,18 @@
+# Don't send large/irrelevant directories to Docker build context
+data/
+unity/
+web/
+infra/.terraform/
+infra/*.tfstate*
+infra/.env
+.git/
+.pytest_cache/
+__pycache__/
+docs/
+tests/
+*.nii
+*.nii.gz
+*.obj
+*.glb
+*.fbx
+*.stl
