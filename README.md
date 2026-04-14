@@ -2,6 +2,8 @@
 
 An open-source pipeline for constructing a high-fidelity 3D mesh of the complete human cerebrospinal fluid (CSF) system, paired with an interactive Unity WebGL viewer that lets you navigate the mesh as if you were a microrobot swimming through the CSF.
 
+> **Note:** This is just a project stub for a project I intend to resume at some point in the coming couple months (as of April 2025). The hope is to also use the result for anatomical scale [MIME](https://github.com/Microrobotics-Simulation-Framework/MIME) microrobotics simulations.
+
 ## What This Project Produces
 
 1. **A complete 3D mesh** of the human CSF system: lateral ventricles, 3rd ventricle, cerebral aqueduct, 4th ventricle, all foramina (Monro, Luschka, Magendie), basal cisterns, cerebral subarachnoid space, and the full spinal subarachnoid space from foramen magnum to sacrum.
