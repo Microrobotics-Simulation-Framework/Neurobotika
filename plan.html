@@ -368,6 +368,10 @@
           <div class="step-num">Phase 5</div>
           <div class="step-name">Validation &amp; (Optional) Custom Model</div>
         </div>
+        <div class="pipeline-step">
+          <div class="step-num">Phase 6</div>
+          <div class="step-name">Microstructures &amp; OpenUSD</div>
+        </div>
       </div>
 
       <div class="notice info">
@@ -841,6 +845,20 @@
         <div class="step-content">
           <h4>(Optional) Train a custom nnU-Net model</h4>
           <p>Convert your finalised label maps into nnU-Net training format. Train a model on your corrected segmentations — you'll likely need 10–20 labelled scans for reasonable performance. This is an optional but high-value step that would produce a reusable, publicly releasable tool.</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">9</div>
+        <div class="step-content">
+          <h4>Microstructure Generation / Algorithmic Proxy</h4>
+          <p>Algorithmic generation of Arachnoid Trabeculae. <span style="color:var(--red); font-weight:600;">(GAP IN LITERATURE)</span> Given the current imaging limits, run the Space Colonization Algorithm built on configurable parameters to proxy AT structures to mimic future experimental benchmarks and datasets (e.g. via OCT catheter validation).</p>
+        </div>
+      </div>
+      <div class="step-block">
+        <div class="step-circle">10</div>
+        <div class="step-content">
+          <h4>OpenUSD Assembly</h4>
+          <p>Export the huge macroscopic surfaces alongside millions of generated micrometer models (trabeculae, septa) into OpenUSD using <code>pxr</code> python bindings. This preserves instancing and metadata for downstream Unity / LBM rendering.</p>
         </div>
       </div>
     </div>

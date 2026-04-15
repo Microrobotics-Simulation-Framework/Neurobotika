@@ -1,0 +1,53 @@
+# Microstructure Generation Configuration
+# This file centralizes the primary parameter sweep variables for generating 
+# arachnoid trabeculae and related structures via the Space Colonization Algorithm (SCA).
+# 
+# Modifying these values allows systematic parametric variations to explore the morphological
+# space of the spinal SAS.
+
+sca_parameters:
+  # Base attractor density (points per mm³)
+  # Controls overall trabecular density; 500-5000 range brackets unknown spinal VF
+  rho_base: 2000
+
+  # Kill distance (μm)
+  # Controls inter-branch spacing and network connectivity
+  kill_distance_um: 100
+
+  # Influence radius (μm)
+  # Controls branching reach; d_i >> d_k produces sparser, longer branches
+  influence_radius_um: 400
+
+  # Tropism bias (0.0 - 1.0)
+  # Controls radial vs. lateral growth balance. 0 = isotropic, 1 = purely radial.
+  tropism_bias_w_norm: 0.4
+
+  # Random perturbation (degrees)
+  # Jitter per step to ensure realistic irregularity
+  sigma_perturb_deg: 15
+
+  # Merge probability when branches approach (0.0 - 1.0)
+  p_merge: 0.2
+
+murray_law:
+  # Exponent controlling parent-child radius scaling. 
+  # γ=3 resembles metabolic vascular trees, γ~2.5-3.5 used here since AT are structural.
+  gamma: 3.0
+  # Tip radius (μm)
+  r_tip_um: 5.0
+  # Max radius (μm)
+  r_max_um: 50.0
+
+regional_asymmetry:
+  # Dorsal-ventral ratio. Controls the asymmetry of trabecular density
+  f_dv_ventral_ratio: 0.5
+  
+  # Fraction of total volume fraction contributed by septa
+  f_septa: 0.15
+  
+  # Target overall volume fraction (0.05=empty, 0.35=optic-nerve-like)
+  vf_target: 0.20
+
+resolutions:
+  # Lattice Spacing (μm) for the output volumetric grids (LBM compatible)
+  lbm_dx_um: 10

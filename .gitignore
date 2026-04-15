@@ -271,3 +271,5 @@ infra/.env
 SynthSeg/
 *.h5
 *.hdf5
+
+tmp/

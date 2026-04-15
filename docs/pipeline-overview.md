@@ -20,6 +20,8 @@ The pipeline transforms raw MRI datasets into a complete, watertight 3D mesh of 
 | 5. Registration | `05_registration/` | Fully automated | ~1–2 hours | Merged label map in `data/segmentations/merged/` |
 | 6. Mesh Generation | `06_mesh_generation/` | Fully automated | ~30 min | Final meshes in `data/meshes/final/` |
 | 7. Model Training | `07_model_training/` | Fully automated | Hours (GPU) | Trained nnU-Net model (optional) |
+| 8. Microstructures | `08_microstructure_generation/` | Fully automated | Minutes (GPU) | Trabeculae fields and graphs |
+| 9. OpenUSD Export | `09_openusd_export/` | Fully automated | Minutes | Unified .usda / .usdz stage |
 
 ## Phase Details
 
@@ -117,6 +119,25 @@ Trains a custom nnU-Net model on the manually refined segmentations, producing a
 - `train_nnunet.sh` — Runs nnU-Net training with automatic configuration
 
 **Outputs:** Trained model weights (publishable)
+
+### Phase 8: Microstructure Generation
+
+Generates computational models of arachnoid trabeculae and septa to augment the standard macro-mesh. Clinical MRIs lack the resolution to capture these sub-structures. The algorithmic parameters serve as a biological stepping stone for future in-vivo experimental mapping (e.g., using OCT catheter SLAM datasets).
+
+**Scripts:**
+- `generate_trabeculae_sca.py` — Runs the Space Colonization Algorithm built from `config.yaml` parameters.
+- `generate_septa.py` — A second pass for septa sheet modeling.
+
+**Outputs:** Volumetric LBM grids and/or geometric graphs.
+
+### Phase 9: OpenUSD Export
+
+Unifies the huge macro-meshes and millions of micro-scale trabecular struts into OpenUSD representations via the `pxr` toolkit. Enables high-performance instancing and semantic labeling.
+
+**Scripts:**
+- `assemble_usd_stage.py` — Integrates the parts into a single readable USD file structure.
+
+**Outputs:** `.usdz` and `.usda` stage definitions.
 
 ## Running the Pipeline
 

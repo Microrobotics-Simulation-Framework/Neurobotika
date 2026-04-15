@@ -21,7 +21,9 @@ Neurobotika/
 │   ├── 04_manual_refinement/  # 3D Slicer scripts and guides for manual work
 │   ├── 05_registration/       # ANTs-based co-registration of brain + spine
 │   ├── 06_mesh_generation/    # Surface extraction, cleaning, and assembly
-│   └── 07_model_training/     # (Optional) Train custom nnU-Net model
+│   ├── 07_model_training/     # (Optional) Train custom nnU-Net model
+│   ├── 08_microstructure_generation/ # SCA procedural generation of trabeculae
+│   └── 09_openusd_export/     # Assemble macro and micro meshes to OpenUSD
 ├── unity/                   # Unity project for the microrobot CSF viewer
 ├── web/                     # Static site wrapper for the Unity WebGL build
 ├── infra/                   # Terraform IaC for AWS S3 + CloudFront hosting
@@ -67,6 +69,8 @@ See [docs/pipeline-overview.md](docs/pipeline-overview.md) for the full walkthro
 | [docs/pipeline-overview.md](docs/pipeline-overview.md) | End-to-end pipeline walkthrough |
 | [docs/datasets.md](docs/datasets.md) | Source dataset details, access, and licensing |
 | [docs/manual-segmentation-guide.md](docs/manual-segmentation-guide.md) | Guide for manual CSF structure segmentation |
+| [docs/microstructure-generation.md](docs/microstructure-generation.md) | Procedural generation of trabeculae and sub-MRI SAS structures |
+| [docs/openusd-compatibility.md](docs/openusd-compatibility.md) | Assembling macro and micro geometry via OpenUSD protocols |
 | [docs/unity-viewer.md](docs/unity-viewer.md) | Unity microrobot viewer design and build |
 | [docs/deployment.md](docs/deployment.md) | AWS infrastructure and deployment guide |
 
