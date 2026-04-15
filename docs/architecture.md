@@ -4,7 +4,7 @@
 
 Neurobotika has three major components:
 
-1. **Pipeline** — A series of Python and Bash scripts that transform raw MRI data into a watertight 3D mesh of the CSF system.
+1. **Pipeline** — A series of Python scripts that transform raw MRI data into a watertight 3D mesh of the CSF system, augmented with procedurally generated sub-MRI-resolution microstructure, and validated via pore-resolved LBM fluid simulations.
 2. **Unity Viewer** — A WebGL application where users navigate the mesh as a microrobot.
 3. **Infrastructure** — Terraform-managed AWS resources (S3 + CloudFront) for hosting both the viewer and large data assets.
 
@@ -46,6 +46,37 @@ Neurobotika has three major components:
          ├──► S3 (public): final mesh files (.obj, .fbx, .glb)
          │
          ▼
+ ┌─ 07_model_training (optional) ────────────┐
+ │  nnU-Net fine-tuning on new anatomy       │
+ └───────────────────────────────────────────┘
+         │
+         ▼
+ ┌─ 08_microstructure_generation ────────────────────────────────────────┐
+ │  SCA (generate_trabeculae_sca.py) + septa (generate_septa.py)         │
+ │    → binary voxel grid (200³–400³, dx=5–10 μm per RVE)                │
+ │                                                                       │
+ │  LHS sweep (lhs_sweep.py) — N=100 parameter samples:                  │
+ │    Level 1: MIME IBLBMFluidNode (D3Q19 + Bouzidi IBB)                 │
+ │      × 3 pressure-gradient directions → κ_ij tensor (V1)              │
+ │      + VelocityStatisticsAnalyzer (V10) + DispersionProxy (V11)       │
+ │    Level 2: MIME BrinkmanFluidNode (TRT, anisotropic κ_ij(x))         │
+ │      → full-domain independent test vs. 4D PC-MRI                     │
+ │                                                                       │
+ │  ValidationFramework (validation_framework.py):                       │
+ │    Tier 1 calibration → Tier 2 validation → Tier 3 independent test   │
+ │    → Pareto-optimal parameters → HDF5 results dataset                 │
+ └───────────────────────────────────────────────────────────────────────┘
+         │
+         ├──► S3: lbm_results/sweep_results.h5 (HDF5, all V1–V11 metrics)
+         │
+         ▼
+ ┌─ 09_openusd_export ───────────────────────┐
+ │  Assemble macro-mesh + microstructure     │
+ │  into OpenUSD stage for MIME/simulation   │
+ │  and MICROBOTICA visualization            │
+ └───────────────────────────────────────────┘
+         │
+         ▼
  ┌─ Unity Viewer ────────────────────────────┐
  │  Import mesh → microrobot navigation      │
  │  Build WebGL → deploy to S3/CloudFront    │
@@ -77,10 +108,15 @@ neurobotika-data/              (private, pipeline artifacts)
 │   ├── spine/
 │   ├── manual/
 │   └── merged/
-└── meshes/
-    ├── surfaces/
-    ├── cleaned/
-    └── final/
+├── meshes/
+│   ├── surfaces/
+│   ├── cleaned/
+│   └── final/
+└── lbm_results/               (Phase 8 simulation outputs)
+    ├── sweep_results.h5        (HDF5: all LHS sample metrics V1–V11)
+    ├── optimal_params.yaml     (Pareto-optimal parameter sets)
+    ├── rve_binaries/           (binary voxel grids for top parameter sets)
+    └── brinkman/               (Level 2 Brinkman simulation outputs)
 
 neurobotika-public/            (public read, serves assets)
 └── meshes/
@@ -117,3 +153,14 @@ Unity was chosen for the microrobot viewer because:
 - Good support for large mesh rendering with LOD
 - Built-in physics for microrobot navigation
 - Wide community and asset ecosystem
+
+### MIME/MADDENING for Phase 8 CFD simulations
+
+The microstructure LBM simulations (Phase 8) use the **MIME** node framework, which is built on top of **MADDENING** (the GPU-accelerated lattice Boltzmann engine). The two-level simulation architecture uses:
+
+- **MIME `IBLBMFluidNode`** — D3Q19 LBM with Bouzidi interpolated bounce-back for pore-resolved RVE simulations (Level 1). Sub-0.5% torque error, O(dx²) convergence. This is the workhorse for permeability tensor extraction.
+- **MIME `BrinkmanFluidNode`** *(to be implemented)* — D3Q19 LBM with anisotropic Brinkman forcing (Seta 2009, TRT stabilization per Ginzburg 2015) for full-domain coarse simulations (Level 2). Takes the spatially varying κ_ij tensor from Level 1 as input.
+
+**MADDENING integrates with SkyPilot** to dispatch GPU jobs to whichever cloud provider is currently cheapest — RunPod, Lambda Labs, Vast.ai, or AWS (p4de/p5 instances). The Level 1 LHS sweep (~100 RVEs × 3 LBM runs, ~50 minutes on H100) runs on a single GPU; the Level 2 Brinkman simulation is single-GPU feasible at dx=100–200 μm. Full-spine pore-resolved simulation (if ever needed) would require multi-GPU distribution via SkyPilot.
+
+**AWS note:** AWS supports p4de.24xlarge (8× A100 80GB SXM4) and p5.48xlarge (8× H100 80GB SXM5) instances, but GPU quota requests for P-family instances require manual justification and can take days. RunPod/Lambda Labs offer H100 SXMs at spot-like pricing without quota friction — prefer these for LBM workloads. AWS remains the primary choice for Phases 1–7 (CPU/moderate-GPU) and for persistent storage (S3).

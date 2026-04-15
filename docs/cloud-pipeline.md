@@ -1,6 +1,6 @@
-# Running the Pipeline on AWS
+# Running the Pipeline on AWS (and GPU Cloud for Phase 8)
 
-This document covers how to run the entire Neurobotika pipeline on AWS in the **eu-central-1 (Frankfurt)** region, including service recommendations, instance types, service quotas, architecture, and cost estimates.
+This document covers how to run the Neurobotika pipeline, including AWS for Phases 1–7 (segmentation, registration, meshing) and MADDENING+SkyPilot GPU cloud for Phase 8 (LBM microstructure CFD simulations).
 
 All on-demand prices are sourced from the [AWS EC2 bulk pricing API](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/eu-central-1/index.json) for eu-central-1. Spot prices are from [Vantage](https://instances.vantage.sh/) and fluctuate continuously.
 
@@ -64,12 +64,15 @@ Request these via the [Service Quotas console](https://console.aws.amazon.com/se
    +------+-------+      +------+-------+      +--------+----------+
           |                      |                       |
           +----------------------+-----------------------+
-                                 |
-                                 v
-                      +--------------------+
-                      |   S3 + EFS         |
-                      |   (shared storage) |
-                      +--------------------+
+                                 |                        
+                                 v                        
+                      +--------------------+    +-------------------------------+
+                      |   S3 + EFS         |    |  MADDENING + SkyPilot         |
+                      |   (shared storage) |    |  (Phase 8 LBM simulations)    |
+                      |                    |    |                               |
+                      |                    |    |  H100 on RunPod / Lambda Labs |
+                      |                    |    |  or AWS p4de/p5 (if quota ok) |
+                      +--------------------+    +-------------------------------+
 ```
 
 ## Per-Phase Service Recommendations
@@ -215,6 +218,47 @@ Request these via the [Service Quotas console](https://console.aws.amazon.com/se
 
 **SageMaker alternative:** SageMaker Training Jobs handle instance lifecycle automatically and integrate with S3, but add ~20-25% cost overhead (SageMaker ml.g5.2xlarge is more expensive than raw EC2). Use SageMaker only if you need managed experiment tracking or hyperparameter tuning.
 
+### Phase 8: Microstructure Generation & LBM CFD (MADDENING + SkyPilot)
+
+Phase 8 runs the Space Colonization Algorithm (SCA) to generate trabecular microstructure, then executes a Latin Hypercube Sampling (LHS) parameter sweep of pore-resolved LBM simulations (Level 1) followed by a Brinkman coarse simulation (Level 2). This is the most GPU-intensive phase and is **not run on AWS Batch** — it uses MADDENING's SkyPilot integration to dispatch to whichever H100 provider is cheapest at run time.
+
+#### Recommended: RunPod / Lambda Labs (via SkyPilot)
+
+| Aspect | Recommendation |
+|--------|---------------|
+| **Orchestration** | MADDENING + SkyPilot (auto-selects cheapest H100 provider) |
+| **Instance** | 1× H100 SXM5 80GB (RunPod: ~$2.50/hr; Lambda Labs: ~$2.49/hr) |
+| **Why H100 over A100** | MADDENING achieves 1000+ MLUPS on H100 SXM5 vs ~600 MLUPS on A100; Level 1 sweep ~50 min on H100 vs ~90 min on A100 |
+| **Level 1 (LHS sweep)** | 100 samples × 3 LBM runs × ~10s each ≈ **50 minutes**, single H100 |
+| **Level 2 (Brinkman)** | ~1 minute, negligible cost |
+| **Cost (Level 1 sweep)** | ~$2.50/hr × 1 hr ≈ **~$2.50** |
+| **Output** | HDF5 results → upload to `s3://neurobotika-data/lbm_results/` |
+
+**SkyPilot provider priority:** RunPod → Lambda Labs → Vast.ai → AWS p4de/p5 (last resort — quota friction).
+
+#### AWS Fallback (if SkyPilot cannot provision elsewhere)
+
+| Aspect | Recommendation |
+|--------|---------------|
+| **Instance** | p4de.24xlarge (8× A100 80GB, $40.96/hr on-demand) |
+| **Alternative** | p5.48xlarge (8× H100 80GB, $98.32/hr on-demand) |
+| **Spot availability** | P-family spot is extremely rare in eu-central-1 |
+| **Quota note** | P-family default quota is **0 vCPUs**; increasing requires manual justification (days) |
+
+> [!WARNING]
+> AWS P-instance quotas (p4, p5) default to 0 in all regions and require manual quota increase requests with use-case justification. Approval can take 1–5 business days. For LBM workloads, **prefer RunPod/Lambda Labs via SkyPilot** — no quota friction, H100 available immediately at ~$2.50/hr.
+
+#### GPU Performance Comparison for MADDENING LBM
+
+| GPU | MADDENING MLUPS | Level 1 Sweep Time (100 samples) | $/hr (indicative) | $/sweep |
+|-----|-----------------|----------------------------------|-------------------|----------|
+| H100 SXM5 80GB | ~1000+ | ~50 min | $2.50 (RunPod) | ~$2.10 |
+| A100 SXM4 80GB | ~600 | ~85 min | $2.21 (Lambda) | ~$3.12 |
+| H100 PCIe 80GB | ~800 | ~63 min | $2.29 (RunPod) | ~$2.40 |
+| AWS p4de (A100) | ~600 | ~85 min | $40.96/hr ÷ 8 GPU | ~$7.25 |
+
+**Note:** MADDENING MLUPS figures are from prior validation on JAX-LBM H100 SXM5. Verify against your actual MADDENING version.
+
 ## Storage
 
 ### S3 (Primary Storage)
@@ -298,6 +342,12 @@ Step Functions orchestrate the pipeline as a state machine:
     "Phase7_Training": {
       "Type": "Task",
       "Resource": "arn:aws:states:::batch:submitJob.sync",
+      "Next": "Phase8_LBM"
+    },
+    "Phase8_LBM": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::batch:submitJob.sync",
+      "Comment": "Submits SkyPilot job to MADDENING cluster; actual LBM runs on RunPod/Lambda/AWS GPU",
       "End": true
     }
   }
@@ -328,7 +378,9 @@ AWS Batch manages job queues, instance provisioning, and container execution. No
 | 5. Registration | c6i.4xlarge | 1.5 hr | $0.46 |
 | 6. Mesh Generation | c6i.2xlarge | 30 min | $0.08 |
 | 7. Model Training | g4dn.xlarge | 12 hr | $2.21 |
-| **Compute subtotal** | | | **~$29.70** |
+| 8. LBM Sweep (Level 1) | H100 SXM5 (RunPod) | ~1 hr | ~$2.50 |
+| 8. Brinkman (Level 2) | H100 SXM5 (RunPod) | ~5 min | ~$0.21 |
+| **Compute subtotal** | | | **~$32.40** |
 
 | Ongoing | Monthly Cost |
 |---------|-------------|

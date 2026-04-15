@@ -31,9 +31,10 @@ CloudFront Distribution (CDN, HTTPS, caching)
 - **Access:** Public read
 
 ### neurobotika-data
-- **Purpose:** Pipeline data storage (raw datasets, intermediate files)
+- **Purpose:** Pipeline data storage (raw datasets, intermediate files, Phase 8 LBM results)
 - **Access:** Private (IAM-authenticated pipeline access only)
 - **Lifecycle:** Consider S3 Intelligent-Tiering for infrequently accessed raw data
+- **Phase 8 outputs:** `lbm_results/sweep_results.h5` (HDF5, all V1–V11 metrics), `lbm_results/optimal_params.yaml`, `lbm_results/rve_binaries/`, `validation/` (reference PDFs for V6a/b)
 
 ## Prerequisites
 
