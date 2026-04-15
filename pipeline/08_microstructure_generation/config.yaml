@@ -4,6 +4,19 @@
 # 
 # Modifying these values allows systematic parametric variations to explore the morphological
 # space of the spinal SAS.
+#
+# Version: 1.2 — April 2026
+# Changes from v1.1:
+#   - Added lhs_sweep block (N samples, RVE size, HDF5 output)
+#   - Added simulation block (Level 1 RVE LBM parameters, Level 2 Brinkman parameters)
+#   - Added dispersion block (Taylor-Aris proxy and particle tracking options)
+#   - Added cross_validation block (MIME vs Palabos tolerance)
+#   - Added V10 (velocity statistics) and V11 (dispersion proxy) to validation block
+# Changes from v1.0:
+#   - Added validation block (V6a/b thickness/separation PDFs, V7 mass transfer, V8 κ–VF, V9 CLDs)
+#   - Added morphological_sensitivity block (Rossinelli 2024 dilation/erosion technique)
+#   - Added nerve_root_placement block (optional, for cervical segments per Sánchez 2025)
+#   - Corrected citation: Pasquesi → Benko et al. 2020 for cranial VF data
 
 sca_parameters:
   # Base attractor density (points per mm³)
@@ -51,3 +64,188 @@ regional_asymmetry:
 resolutions:
   # Lattice Spacing (μm) for the output volumetric grids (LBM compatible)
   lbm_dx_um: 10
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LHS Sweep Configuration
+# See docs/microstructure-generation.md §5.2, §5.5
+# ──────────────────────────────────────────────────────────────────────────────
+lhs_sweep:
+  n_samples: 100
+  # RVE cube side length (mm); 2×2×2 mm³ captures 5–40 inter-trabecular spacings
+  rve_size_mm: 2.0
+  # Output directory for HDF5 results
+  output_dir: "lhs_results"
+  # Random seed for reproducibility
+  seed: 42
+
+  # Primary sweep parameter ranges (overrides defaults in lhs_sweep.py)
+  # Uncomment to override; values default to PRIMARY_SWEEP_PARAMETERS ranges
+  # parameter_overrides:
+  #   rho_base: [500, 5000]
+  #   kill_distance_um: [40, 200]
+  #   influence_radius_um: [150, 800]
+  #   tropism_bias_w_norm: [0.1, 0.8]
+  #   murray_gamma: [2.0, 4.0]
+  #   f_dv_ventral_ratio: [0.2, 0.8]
+  #   f_septa: [0.0, 0.3]
+  #   vf_target: [0.05, 0.35]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Multi-Scale Simulation Configuration
+# See docs/microstructure-generation.md §6.3
+# ──────────────────────────────────────────────────────────────────────────────
+simulation:
+  # Level 1: Pore-resolved RVE simulations
+  level_1:
+    # LBM lattice spacing (μm) — must resolve trabecular surfaces
+    dx_um: 10
+    # LBM lattice (D3Q19 standard)
+    lattice: "D3Q19"
+    # Collision operator
+    collision: "BGK"  # Options: BGK, MRT, TRT
+    # Pressure gradient magnitude for permeability extraction (Pa/m)
+    pressure_gradient_magnitude: 1.0
+    # Convergence criterion: relative change in ⟨u⟩ between timesteps
+    convergence_threshold: 1.0e-6
+    # Maximum timesteps (safety limit)
+    max_timesteps: 50000
+    # Solver backend
+    backend: "mime"  # MIME IBLBMFluidNode
+
+  # Level 2: Brinkman-penalized coarse simulation (independent test tier)
+  level_2:
+    enabled: false  # Enable after identifying Pareto-optimal parameters
+    # Coarse lattice spacing (μm) — single-GPU feasible
+    dx_um: 200
+    lattice: "D3Q19"
+    # TRT collision for stability at high κ contrast (Ginzburg 2015)
+    collision: "TRT"
+    # Brinkman forcing scheme reference: Seta 2009
+    forcing_scheme: "seta_2009"
+    # 4D PC-MRI inlet waveform data source
+    inlet_waveform: "yiallourou_2012"
+    # Domain extent (approximate cervical spine, mm)
+    domain_length_mm: 100
+    domain_diameter_mm: 10
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Validation Configuration (Metrics V6–V11)
+# See docs/microstructure-generation.md §5.4 for full metric descriptions
+# ──────────────────────────────────────────────────────────────────────────────
+validation:
+  # V6a — Trabecular thickness PDF validation
+  # Reference: Rossinelli et al. 2023, Dataset1
+  # Method: 3D Euclidean distance transform → maximum inscribed ball (Hildebrand & Rüegsegger 1997)
+  thickness_pdf:
+    enabled: true
+    # Expected peak thickness range (μm diameter) from Rossinelli 2023
+    reference_peak_range_um: [40, 60]
+    # Maximum observed thickness (μm) — nothing should exceed this
+    reference_max_um: 200
+    # Distance metric for PDF comparison
+    distance_metric: "wasserstein"  # Options: wasserstein, kl_divergence
+    # Optional: path to digitized reference PDF (numpy .npy file)
+    # If null, validation reports the generated PDF without quantitative comparison
+    reference_pdf_path: null
+
+  # V6b — Trabecular separation PDF validation
+  # Same method applied to the pore phase (inverted binary array)
+  separation_pdf:
+    enabled: true
+    distance_metric: "wasserstein"
+    reference_pdf_path: null
+
+  # V7 — Surface-area-normalized wall strain rate (mass transfer proxy)
+  # Reference: Rossinelli et al. 2024 — 17× mass transfer decrease without microstructure
+  wall_strain_rate:
+    enabled: true
+    # Expected amplification factor range relative to empty annulus
+    expected_amplification_range: [5, 17]
+    # Whether to compute full Sherwood number (requires concentration field solve)
+    compute_sherwood: false
+
+  # V8 — Exponential κ–VF scaling
+  # Reference: Rossinelli et al. 2024 — exponential relationship κ = a × exp(b × VF)
+  # This is a sweep-level metric: computed across the full LHS parameter sweep
+  kappa_vf_scaling:
+    enabled: true
+    # Fit model: κ = a × exp(b × VF)
+    fit_model: "exponential"
+
+  # V9 — Chord Length Distributions (CLD)
+  # Novel characterization; compared against V6a/b as cross-check
+  # Reference: Vogel et al. 2010 — CLDs capture connectivity/clustering
+  chord_length_distributions:
+    enabled: true
+    # Number of rays per principal axis for CLD computation
+    rays_per_axis: 1000
+    # Phases to compute CLDs for
+    phases: ["pore", "solid"]
+    # Optional: external reference CLD for future SRμCT data comparison
+    # Accepts numpy .npy file with histogram bin edges and counts
+    reference_cld_path: null
+
+  # V10 — Velocity field statistics
+  # Variance, PDFs, stagnation zones from converged LBM velocity field
+  velocity_statistics:
+    enabled: true
+    # Number of histogram bins for velocity PDFs
+    n_bins: 100
+    # Stagnation threshold: fraction of mean velocity
+    stagnation_threshold: 0.01
+
+  # V11 — Effective dispersion proxy (Taylor-Aris estimate)
+  # Key metric for paper thesis (§5.7): if hydraulically equivalent sets show
+  # different V11 values, permeability alone is insufficient for transport
+  dispersion_proxy:
+    enabled: true
+    # Molecular diffusion coefficient (m²/s) for typical intrathecal drugs
+    d_molecular: 1.5e-9
+    # Whether to also run expensive particle tracking (Approach B) for subset
+    particle_tracking_subset: false
+    # Number of particles for tracking (if enabled)
+    n_particles: 10000
+    # Number of oscillation cycles to track
+    n_cycles: 1000
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Morphological Sensitivity Analysis (Rossinelli 2024 technique)
+# Apply morphological opening/closing to probe κ sensitivity to geometric perturbations
+# ──────────────────────────────────────────────────────────────────────────────
+morphological_sensitivity:
+  enabled: false  # Enable after optimal parameters are identified from LHS sweep
+  # Number of voxels for dilation/erosion steps
+  dilation_steps: [1, 2, 3]
+  erosion_steps: [1, 2, 3]
+  # Metrics to re-evaluate after each perturbation
+  metrics_to_evaluate: ["kappa_eff", "flow_ratio", "wall_strain_rate", "dispersion_proxy"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Cross-Validation Configuration (§7.3)
+# Compare MIME against reference solver for reviewer confidence
+# ──────────────────────────────────────────────────────────────────────────────
+cross_validation:
+  enabled: false  # Enable for publication-readiness check
+  # Number of representative RVE configurations to cross-validate
+  n_configurations: 5
+  # Reference solver (BSD-licensed, has Bouzidi IBB)
+  reference_solver: "palabos"
+  # Acceptable relative difference in κ_ij components (%)
+  tolerance_pct: 2.0
+  # Investigate threshold (%)
+  investigate_threshold_pct: 5.0
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Nerve Root / Denticulate Ligament Placement (Optional)
+# For cervical segments where trabeculae alone are insufficient (Sánchez et al. 2025).
+# NOTE: Nerve roots are macroscopic and typically resolvable from MRI input geometry.
+# This section is reserved for future procedural placement when MRI resolution is
+# insufficient, and is NOT part of the current microstructure generation scope.
+# See docs/microstructure-generation.md §1.3 for discussion.
+# ──────────────────────────────────────────────────────────────────────────────
+nerve_root_placement:
+  enabled: false
+  # Reference model: Martin et al. 2017 — 31 pairs of semi-idealized nerve rootlets
+  reference: "Martin et al. 2017, J Biomech 54:97-106"
+  # Spinal levels where procedural placement may be needed
+  applicable_levels: ["C1", "C2", "C3", "C4", "C5", "C6", "C7"]
