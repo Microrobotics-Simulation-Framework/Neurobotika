@@ -14,7 +14,7 @@ Neurobotika has three major components:
  Source MRI Datasets (OpenNeuro, Zenodo, etc.)
          │
          ▼
- ┌─ 01_data_acquisition ─────────────────────┐
+ ┌─ 01_data_acquisition ──────────────────────┐
  │  Download → verify checksums → store in S3 │
  └────────────────────────────────────────────┘
          │
@@ -23,8 +23,8 @@ Neurobotika has three major components:
  │  SynthSeg → ventricle + CSF label maps    │
  └───────────────────────────────────────────┘
          │                    ┌─ 03_spine_segmentation ──────────────┐
-         │                    │  TotalSpineSeg + SCT → spinal SAS   │
-         │                    └─────────────────────────────────────┘
+         │                    │  TotalSpineSeg + SCT → spinal SAS    │
+         │                    └──────────────────────────────────────┘
          ▼                                   │
  ┌─ 04_manual_refinement ────────────────────┤
  │  3D Slicer: aqueduct, foramina, cisterns  │
