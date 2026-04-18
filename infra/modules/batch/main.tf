@@ -438,7 +438,8 @@ locals {
       memory    = 15000
       gpu       = 1
       queue     = "gpu"
-      command   = ["python3", "/app/03/run_totalspineseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
+      # python3 → the wrapper handles S3 in/out and invokes the totalspineseg CLI.
+      command = ["python3", "/app/03/run_spineseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
     }
     registration = {
       name      = "${var.project_name}-registration"

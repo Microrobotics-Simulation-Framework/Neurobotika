@@ -1,33 +1,40 @@
-# Neurobotika Spine Pipeline (Phase 3)
-# GPU image: TotalSpineSeg + SCT for spinal SAS segmentation
+# Neurobotika Spine Segmentation (Phase 3) — TotalSpineSeg
+#
+# TotalSpineSeg is an nnUNetv2-based pipeline that segments vertebrae,
+# intervertebral discs, spinal cord, and spinal canal from T2w MRIs.
+# That gives us the two masks we need for spinal SAS: cord + canal.
+#
+# SCT (Spinal Cord Toolbox) is deliberately NOT installed here — its
+# bundled installer is fragile in a non-interactive Docker build, and
+# Phase 3's SAS computation only needs cord + canal which TotalSpineSeg
+# already produces. SCT's PAM50 registration / vertebral labelling is a
+# future Phase 5 enhancement.
 #
 # Build:
-#   docker build -f docker/spine.Dockerfile -t neurobotika-spine .
+#   ./docker/build-on-codebuild.sh spine
 #
 # Run locally:
-#   docker run --gpus all -v $(pwd)/data:/data neurobotika-spine \
-#     python /app/03/run_totalspineseg.py --input /data/raw/spine.nii.gz --output-dir /data/segmentations/spine/
+#   docker run --gpus all neurobotika-spine \
+#     python3 /app/03/run_spineseg.py --input s3://... --output-dir s3://...
 
-FROM 763104351884.dkr.ecr.eu-central-1.amazonaws.com/pytorch-training:2.1.0-gpu-py310-cu121-ubuntu20.04-ec2
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 
-RUN pip install --no-cache-dir \
-    totalspineseg \
-    nibabel \
-    numpy \
-    scipy \
-    click
+# git is needed by pip for any VCS dependencies nnunetv2 / totalspineseg pull.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Spinal Cord Toolbox (SCT)
-# SCT is large (~2 GB); this makes the image heavy but avoids runtime downloads
-RUN apt-get update && apt-get install -y --no-install-recommends git && \
-    git clone --depth 1 https://github.com/spinalcordtoolbox/spinalcordtoolbox.git /tmp/sct && \
-    cd /tmp/sct && yes | ./install_sct -y && \
-    rm -rf /tmp/sct && apt-get purge -y git && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-
-ENV PATH="/root/sct_*/bin:${PATH}"
-
-# Install AWS CLI for S3 data transfers
-RUN pip install --no-cache-dir awscli
+# totalspineseg needs Python ≥3.10 (image has 3.11), pip ≥23, setuptools ≥67.
+# Install totalspineseg with its nnunetv2 extra, plus our S3 wrapper deps.
+RUN pip install --no-cache-dir --upgrade "pip>=23" "setuptools>=67" && \
+    pip install --no-cache-dir \
+        "totalspineseg[nnunetv2]" \
+        awscli \
+        boto3 \
+        nibabel \
+        numpy \
+        click
 
 COPY pipeline/03_spine_segmentation/ /app/03/
 
