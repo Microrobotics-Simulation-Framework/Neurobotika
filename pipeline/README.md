@@ -7,7 +7,7 @@ The segmentation-to-mesh pipeline runs in nine phases. Phases 1–7 are the auto
 ```
 pipeline/
 ├── 01_data_acquisition/      # Download MRI datasets, upload to S3, verify
-├── 02_brain_segmentation/    # SynthSeg-based brain CSF segmentation
+├── 02_brain_segmentation/    # SuperSynth-based brain + extracerebral segmentation
 ├── 03_spine_segmentation/    # TotalSpineSeg + SCT spinal canal segmentation
 ├── 04_manual_refinement/     # 3D Slicer scripts + label-map validation
 ├── 05_registration/          # ANTs co-registration of brain + spine
@@ -50,7 +50,7 @@ bash pipeline/01_data_acquisition/run_downloads.sh \
   --dataset mgh --subject sub-EXC004 \
   --s3-dest s3://neurobotika-data/runs/dev-001/raw/mgh_100um
 
-python pipeline/02_brain_segmentation/run_synthseg.py --help
+python pipeline/02_brain_segmentation/run_brainseg.py --help
 ```
 
 `scripts/run_full_pipeline.sh` wraps phases 1–7 for a local laptop run (see `scripts/README.md`).
@@ -90,4 +90,4 @@ Most scripts take `--help` and share a few common flags:
 | `--subject` | BIDS subject id, where applicable |
 | `--verbose` / `-v` | Detailed logging |
 
-Phase-specific flags (e.g., `--gpu` for SynthSeg) are documented in each phase's README.
+Phase-specific flags (e.g., `--mode exvivo` for SuperSynth) are documented in each phase's README.

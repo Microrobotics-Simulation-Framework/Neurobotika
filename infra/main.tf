@@ -97,3 +97,12 @@ module "step_functions" {
   notification_email  = var.notification_email
   data_bucket_arn     = module.data_bucket.bucket_arn
 }
+
+module "codebuild" {
+  source           = "./modules/codebuild"
+  count            = var.enable_pipeline ? 1 : 0
+  project_name     = var.project_name
+  data_bucket_arn  = module.data_bucket.bucket_arn
+  data_bucket_name = module.data_bucket.bucket_id
+  aws_region       = var.aws_region
+}

@@ -100,12 +100,44 @@ resource "aws_iam_role_policy_attachment" "job_logs" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
 }
 
+# --- Launch Template: bigger root volume for large container images ---
+#
+# Default ECS-optimized AMIs ship a 30 GB root volume. The brain image
+# (freesurfer/freesurfer:7.4.1 base) is 9.88 GB compressed and expands to
+# ~25 GB, leaving no room for the job's working files. 100 GB gives
+# headroom for brain + spine + training images without meaningful cost
+# (gp3 storage is prorated hourly).
+
+resource "aws_launch_template" "batch_storage" {
+  name_prefix = "${var.project_name}-batch-"
+  description = "Batch instances with 100 GiB root volume for large images (freesurfer etc.)"
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      delete_on_termination = true
+      encrypted             = true
+    }
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name    = "${var.project_name}-batch"
+      Project = var.project_name
+    }
+  }
+}
+
 # --- Compute Environment: GPU (Spot) ---
 
 resource "aws_batch_compute_environment" "gpu_spot" {
-  compute_environment_name = "${var.project_name}-gpu-spot"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
+  compute_environment_name_prefix = "${var.project_name}-gpu-spot-"
+  type                            = "MANAGED"
+  service_role                    = aws_iam_role.batch_service.arn
 
   compute_resources {
     type                = "SPOT"
@@ -120,6 +152,11 @@ resource "aws_batch_compute_environment" "gpu_spot" {
     instance_role      = aws_iam_instance_profile.ecs_instance.arn
     subnets            = var.subnet_ids
     security_group_ids = [var.security_group_id]
+
+    launch_template {
+      launch_template_id = aws_launch_template.batch_storage.id
+      version            = "$Latest"
+    }
   }
 
   lifecycle {
@@ -130,9 +167,9 @@ resource "aws_batch_compute_environment" "gpu_spot" {
 # --- Compute Environment: GPU (On-Demand fallback) ---
 
 resource "aws_batch_compute_environment" "gpu_ondemand" {
-  compute_environment_name = "${var.project_name}-gpu-ondemand"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
+  compute_environment_name_prefix = "${var.project_name}-gpu-ondemand-"
+  type                            = "MANAGED"
+  service_role                    = aws_iam_role.batch_service.arn
 
   compute_resources {
     type = "EC2"
@@ -144,6 +181,11 @@ resource "aws_batch_compute_environment" "gpu_ondemand" {
     instance_role      = aws_iam_instance_profile.ecs_instance.arn
     subnets            = var.subnet_ids
     security_group_ids = [var.security_group_id]
+
+    launch_template {
+      launch_template_id = aws_launch_template.batch_storage.id
+      version            = "$Latest"
+    }
   }
 
   lifecycle {
@@ -154,9 +196,9 @@ resource "aws_batch_compute_environment" "gpu_ondemand" {
 # --- Compute Environment: CPU (Spot) ---
 
 resource "aws_batch_compute_environment" "cpu_spot" {
-  compute_environment_name = "${var.project_name}-cpu-spot"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
+  compute_environment_name_prefix = "${var.project_name}-cpu-spot-"
+  type                            = "MANAGED"
+  service_role                    = aws_iam_role.batch_service.arn
 
   compute_resources {
     type                = "SPOT"
@@ -171,6 +213,11 @@ resource "aws_batch_compute_environment" "cpu_spot" {
     instance_role      = aws_iam_instance_profile.ecs_instance.arn
     subnets            = var.subnet_ids
     security_group_ids = [var.security_group_id]
+
+    launch_template {
+      launch_template_id = aws_launch_template.batch_storage.id
+      version            = "$Latest"
+    }
   }
 
   lifecycle {
@@ -181,9 +228,9 @@ resource "aws_batch_compute_environment" "cpu_spot" {
 # --- Compute Environment: CPU (On-Demand fallback) ---
 
 resource "aws_batch_compute_environment" "cpu_ondemand" {
-  compute_environment_name = "${var.project_name}-cpu-ondemand"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
+  compute_environment_name_prefix = "${var.project_name}-cpu-ondemand-"
+  type                            = "MANAGED"
+  service_role                    = aws_iam_role.batch_service.arn
 
   compute_resources {
     type = "EC2"
@@ -195,6 +242,11 @@ resource "aws_batch_compute_environment" "cpu_ondemand" {
     instance_role      = aws_iam_instance_profile.ecs_instance.arn
     subnets            = var.subnet_ids
     security_group_ids = [var.security_group_id]
+
+    launch_template {
+      launch_template_id = aws_launch_template.batch_storage.id
+      version            = "$Latest"
+    }
   }
 
   lifecycle {
@@ -371,10 +423,13 @@ locals {
       name      = "${var.project_name}-brain-seg"
       image_key = "brain"
       vcpus     = 4
-      memory    = 15000
-      gpu       = 1
-      queue     = "gpu"
-      command   = ["python", "/app/02/run_synthseg.py", "--input", "Ref::input", "--output", "Ref::output"]
+      # 15000 MB is fine on g5/g6 (16 GB system RAM); SuperSynth's heavy
+      # allocations go into GPU VRAM (24 GB on both A10G and L4).
+      memory = 15000
+      gpu    = 1
+      queue  = "gpu"
+      # python3 (not python) because the FreeSurfer base only exposes python3.
+      command = ["python3", "/app/02/run_brainseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
     }
     spine-seg = {
       name      = "${var.project_name}-spine-seg"
@@ -383,7 +438,7 @@ locals {
       memory    = 15000
       gpu       = 1
       queue     = "gpu"
-      command   = ["python", "/app/03/run_totalspineseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
+      command   = ["python3", "/app/03/run_totalspineseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
     }
     registration = {
       name      = "${var.project_name}-registration"
@@ -392,7 +447,7 @@ locals {
       memory    = 30000
       gpu       = 0
       queue     = "cpu"
-      command   = ["python", "/app/05/register_brain_to_mni.py", "--input", "Ref::input", "--output", "Ref::output"]
+      command   = ["python3", "/app/05/register_brain_to_mni.py", "--input", "Ref::input", "--output", "Ref::output"]
     }
     meshing = {
       name      = "${var.project_name}-meshing"
@@ -401,7 +456,7 @@ locals {
       memory    = 15000
       gpu       = 0
       queue     = "cpu"
-      command   = ["python", "/app/06/labels_to_surface.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
+      command   = ["python3", "/app/06/labels_to_surface.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
     }
     training = {
       name      = "${var.project_name}-training"

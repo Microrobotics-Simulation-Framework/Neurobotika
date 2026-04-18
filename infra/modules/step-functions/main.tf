@@ -179,7 +179,7 @@ resource "aws_sfn_state_machine" "pipeline" {
           "spine_dest.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic', $.run_id)"
           "lumbosacral_dest.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lumbosacral', $.run_id)"
           "brain_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/mgh_100um/{}/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz', $.run_id, $.brain_subject)"
-          "brain_output.$"        = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/brain/{}.nii.gz', $.run_id, $.brain_subject)"
+          "brain_output_dir.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/brain/{}', $.run_id, $.brain_subject)"
           "spine_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic/{}/{}/anat/{}_T2w.nii.gz', $.run_id, $.spine_subject, $.spine_subject, $.spine_subject)"
           "spine_output_dir.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/spine/{}', $.run_id, $.spine_subject)"
           "registration_input.$"  = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/merged.nii.gz', $.run_id)"
@@ -189,7 +189,7 @@ resource "aws_sfn_state_machine" "pipeline" {
 
           # S3 keys (no s3:// prefix) for HeadObject / ListObjectsV2 calls:
           "manifest_key.$"            = "States.Format('runs/{}/raw/manifest.json', $.run_id)"
-          "brain_output_key.$"        = "States.Format('runs/{}/seg/brain/{}.nii.gz', $.run_id, $.brain_subject)"
+          "brain_output_prefix.$"     = "States.Format('runs/{}/seg/brain/{}/', $.run_id, $.brain_subject)"
           "spine_output_prefix.$"     = "States.Format('runs/{}/seg/spine/{}/', $.run_id, $.spine_subject)"
           "registration_output_key.$" = "States.Format('runs/{}/registered/merged.nii.gz', $.run_id)"
           "meshing_output_prefix.$"   = "States.Format('runs/{}/meshes/', $.run_id)"
@@ -348,18 +348,23 @@ resource "aws_sfn_state_machine" "pipeline" {
             States = {
               Check_Phase2 = {
                 Type     = "Task"
-                Resource = "arn:aws:states:::aws-sdk:s3:headObject"
+                Resource = "arn:aws:states:::aws-sdk:s3:listObjectsV2"
                 Parameters = {
-                  Bucket  = local.data_bucket_name
-                  "Key.$" = "$.brain_output_key"
+                  Bucket     = local.data_bucket_name
+                  "Prefix.$" = "$.brain_output_prefix"
+                  MaxKeys    = 1
                 }
                 ResultPath = "$.phase2_check"
-                Next       = "Skip_Phase2"
-                Catch = [{
-                  ErrorEquals = ["States.ALL"]
-                  ResultPath  = "$.phase2_check"
-                  Next        = "Phase2_BrainSeg"
+                Next       = "Gate_Phase2_Exists"
+              }
+              Gate_Phase2_Exists = {
+                Type = "Choice"
+                Choices = [{
+                  Variable           = "$.phase2_check.KeyCount"
+                  NumericGreaterThan = 0
+                  Next               = "Skip_Phase2"
                 }]
+                Default = "Phase2_BrainSeg"
               }
               Phase2_BrainSeg = {
                 Type     = "Task"
@@ -369,8 +374,8 @@ resource "aws_sfn_state_machine" "pipeline" {
                   JobQueue      = var.gpu_job_queue_arn
                   JobDefinition = lookup(var.job_definition_arns, "brain-seg", "")
                   Parameters = {
-                    "input.$"  = "$.brain_input"
-                    "output.$" = "$.brain_output"
+                    "input.$"      = "$.brain_input"
+                    "output_dir.$" = "$.brain_output_dir"
                   }
                 }
                 End = true

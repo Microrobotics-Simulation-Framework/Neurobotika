@@ -33,10 +33,18 @@ export AWS_PROFILE AWS_REGION
 
 REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-# Authenticate Docker to ECR
+# Authenticate Docker to our ECR (for pushing our images) and to the AWS Deep
+# Learning Container ECR (for pulling pytorch-training base images). DLC ECR
+# account 763104351884 is readable with any valid AWS ECR token.
+DLC_REGISTRY="763104351884.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
 echo "Logging in to ECR: ${REGISTRY} (profile: ${AWS_PROFILE})"
 aws ecr get-login-password --region "${AWS_REGION}" --profile "${AWS_PROFILE}" | \
   docker login --username AWS --password-stdin "${REGISTRY}"
+
+echo "Logging in to AWS DLC ECR: ${DLC_REGISTRY}"
+aws ecr get-login-password --region "${AWS_REGION}" --profile "${AWS_PROFILE}" | \
+  docker login --username AWS --password-stdin "${DLC_REGISTRY}"
 
 IMAGES=("download" "brain" "spine" "postproc" "training")
 

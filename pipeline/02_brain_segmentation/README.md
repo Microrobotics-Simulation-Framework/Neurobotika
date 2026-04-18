@@ -1,71 +1,53 @@
 # Phase 2: Brain Segmentation
 
-Automated segmentation of brain CSF structures using SynthSeg.
+Automated brain segmentation using FreeSurfer's `mri_synthseg` (a contrast-agnostic deep-learning model for whole-brain aseg). The wrapper downsamples the input to 1 mm isotropic first — SynthSeg's training regime — before inference. This keeps memory reasonable and matches the model's expectations.
 
-## SynthSeg (Standalone)
-
-We use SynthSeg as a standalone Python package, **not** through a full FreeSurfer installation. SynthSeg is a contrast-agnostic deep learning model that segments brain structures from any MRI scan.
-
-### Installing SynthSeg Standalone
-
-Option A — pip (if available):
-```bash
-pip install synthseg
-```
-
-Option B — from source:
-```bash
-git clone https://github.com/BBillot/SynthSeg.git
-cd SynthSeg
-pip install -e .
-```
-
-The model weights are downloaded automatically on first run.
+Output is written as a directory to match the shape of the upcoming migration to **SuperSynth** (`mri_super_synth`), which emits a directory of segmentation + synthetic T1w/T2w + MNI affine + QC. SuperSynth is the cleaner long-term answer for our ex-vivo data but isn't yet shipped in the `freesurfer/freesurfer:7.4.1` Docker image; swapping to it later will be a one-binary change.
 
 ## Scripts
 
-### `resample_volume.py`
+### `run_brainseg.py`
 
-Resamples the high-resolution MGH volume to a lower resolution suitable for SynthSeg input. SynthSeg was trained on 1mm isotropic data and works at any resolution, but 1mm gives the most reliable results.
+Thin Python wrapper around the `mri_synthseg` CLI. Handles:
 
-```bash
-python resample_volume.py \
-    --input data/raw/mgh_100um/brain_200um.nii.gz \
-    --output data/segmentations/brain/brain_1mm.nii.gz \
-    --target-resolution 1.0
-```
-
-### `run_synthseg.py`
-
-Runs SynthSeg inference on the resampled brain volume.
+1. Download the input NIfTI from S3 if an `s3://` URI is passed.
+2. Downsample to 1 mm isotropic (via `scipy.ndimage.zoom`, linear interp) if the input voxel size is < 0.95 mm. No-op for inputs already at ~1 mm.
+3. Invoke `mri_synthseg --parc --robust` (defaults) on the 1 mm volume, writing `seg.nii.gz` + `volumes.csv` to a tempdir.
+4. Upload the output directory back to S3 if `--output-dir` is an `s3://` prefix.
 
 ```bash
-python run_synthseg.py \
-    --input data/segmentations/brain/brain_1mm.nii.gz \
-    --output data/segmentations/brain/synthseg_labels.nii.gz \
-    --volumes data/segmentations/brain/volumes.csv \
-    --gpu
+python3 run_brainseg.py \
+  --input s3://neurobotika-data/runs/run-001/raw/mgh_100um/sub-EXC004/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz \
+  --output-dir s3://neurobotika-data/runs/run-001/seg/brain/sub-EXC004
 ```
 
-### `extract_csf_labels.py`
+| Flag | Default | Notes |
+|---|---|---|
+| `--gpu / --no-gpu` | `--gpu` | Disables GPU via `--cpu` passed through to `mri_synthseg`. |
+| `--robust / --no-robust` | `--robust` | Keeps SynthSeg's contrast-agnostic path — essential for the MGH synthetic-FLASH25 contrast. |
+| `--parc / --no-parc` | `--parc` | Include cortical parcellation. |
 
-Extracts CSF-specific labels from the SynthSeg output into separate binary masks.
+### `resample_volume.py`, `extract_csf_labels.py`
 
-```bash
-python extract_csf_labels.py \
-    --input data/segmentations/brain/synthseg_labels.nii.gz \
-    --output-dir data/segmentations/brain/
+Standalone helpers retained for the local development workflow. The cloud pipeline's Batch job just calls `run_brainseg.py`, which handles resampling internally.
+
+## Memory & instance requirements
+
+After the 1 mm downsample, `mri_synthseg --robust --parc` fits comfortably on **g5.xlarge** / **g6.xlarge** (4 vCPU, 16 GB RAM, 24 GB VRAM). g4dn.xlarge (16 GB T4 VRAM) also works *after downsampling*, but was removed from `gpu_instance_types` for headroom — the 24 GB-VRAM families cope better when downstream phases (e.g. training) load larger models.
+
+## Output layout
+
+```
+<output-dir>/
+├── seg.nii.gz       # aseg-style segmentation
+└── volumes.csv      # per-structure volumes in mm³
 ```
 
-**Produces:**
-- `lateral_ventricles.nii.gz` — Labels 4, 5, 43, 44
-- `third_ventricle.nii.gz` — Label 14
-- `fourth_ventricle.nii.gz` — Label 15
-- `extraventricular_csf.nii.gz` — Label 24
-- `choroid_plexus.nii.gz` — Labels 31, 63
-- `all_csf_combined.nii.gz` — Union of all CSF labels
+The state machine's `Check_Phase2` state uses `ListObjectsV2` with `MaxKeys=1` on the `seg/brain/<subject>/` prefix — presence of any object means "Phase 2 done, skip". Delete the prefix to force a re-run.
 
-## SynthSeg Label Reference (FreeSurfer aseg convention)
+## aseg Label Reference (FreeSurfer convention)
+
+CSF-relevant labels emitted by SynthSeg:
 
 | Label | Structure |
 |-------|-----------|
@@ -79,12 +61,21 @@ python extract_csf_labels.py \
 | 44 | Right lateral ventricle inferior horn |
 | 63 | Right choroid plexus |
 
-## What SynthSeg Does NOT Segment
+## What Phase 2 does NOT produce
 
-These structures require manual work in Phase 4:
+Still manual in Phase 4:
+
 - Cerebral aqueduct (of Sylvius)
-- Foramina of Monro
-- Foramina of Luschka
-- Foramen of Magendie
+- Foramina of Monro, Luschka, Magendie
 - Individual basal cisterns
 - Foramen magnum junction
+
+## Future upgrade: SuperSynth
+
+When the FreeSurfer image ships `mri_super_synth` (promised for a release after 7.4.1; 8.x images may include it — worth re-checking), swap the `mri_synthseg` call for:
+
+```bash
+mri_super_synth --i <input> --o <output-dir> --mode exvivo --device cuda
+```
+
+SuperSynth handles ex-vivo contrast natively, does super-resolution (1 mm T1w/T2w/FLAIR), registers to MNI, and includes extracerebral structures — which would trim Phase 4 manual work and obsolete part of Phase 5. Keeping the directory-based output contract today means the swap will be a one-binary-line change in `run_brainseg.py`.

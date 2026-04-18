@@ -40,14 +40,21 @@ Downloads the source MRI datasets and uploads them to S3. The entry point in clo
 
 ### Phase 2: Brain Segmentation
 
-Runs SynthSeg (standalone, no FreeSurfer required) on the brain MRI to automatically segment the ventricular system and extraventricular CSF.
+Runs **SuperSynth** (`mri_super_synth` from FreeSurfer 7.4+) on the brain MRI in ex-vivo mode. One pass produces an aseg-style label map (cortical + subcortical + **extracerebral** + limbic), 1 mm synthetic T1w/T2w/FLAIR volumes (super-resolution), MNI affine registration, and per-structure QC Dice scores.
+
+SuperSynth supersedes plain SynthSeg for this pipeline:
+- Native `--mode exvivo` matches MGH ds002179 (7T post-mortem brain).
+- Resample-to-1mm happens internally — the 200 μm MGH volumes don't need preprocessing.
+- Extracerebral structures are included, trimming the manual work in Phase 4.
+- Built-in MNI registration overlaps with part of Phase 5.
 
 **Scripts:**
-- `resample_volume.py` — Resamples the 100 um volume to 1 mm isotropic for SynthSeg input (SynthSeg works at any resolution but 1 mm is its training resolution)
-- `run_synthseg.py` — Runs SynthSeg inference, producing a label map with ventricles + CSF
-- `extract_csf_labels.py` — Extracts specific CSF-related labels into separate binary masks (lateral ventricles, 3rd ventricle, 4th ventricle, extraventricular CSF)
+- `run_brainseg.py` — wrapper that downloads input from S3, invokes `mri_super_synth`, uploads the output directory back.
+- `resample_volume.py`, `extract_csf_labels.py` — legacy scripts for the local development path (not used in the cloud pipeline).
 
-**Key labels from SynthSeg (FreeSurfer aseg convention):**
+**Memory note:** SuperSynth needs ≥24 GB of RAM on GPU or CPU. Batch's `gpu_instance_types` is restricted to g5.xlarge / g6.xlarge (24 GB VRAM) — g4dn.xlarge's 16 GB T4 is insufficient.
+
+**Key aseg labels relevant to CSF** (same convention as SynthSeg):
 - 4/43: Left/Right lateral ventricle
 - 5/44: Left/Right lateral ventricle inferior horn
 - 14: 3rd ventricle
@@ -55,7 +62,7 @@ Runs SynthSeg (standalone, no FreeSurfer required) on the brain MRI to automatic
 - 24: Extraventricular CSF (subarachnoid)
 - 31/63: Left/Right choroid plexus
 
-**Outputs:** Label maps and binary masks in `data/segmentations/brain/`
+**Outputs:** `<run_id>/seg/brain/<brain_subject>/` containing `seg.nii.gz` + synthetic T1w/T2w/FLAIR + MNI registration + QC.
 
 ### Phase 3: Spine Segmentation
 

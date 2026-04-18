@@ -44,3 +44,8 @@ output "state_machine_arn" {
   description = "Step Functions pipeline state machine ARN"
   value       = var.enable_pipeline ? module.step_functions[0].state_machine_arn : ""
 }
+
+output "codebuild_project_name" {
+  description = "CodeBuild project name for building Docker images that are too large for local disk"
+  value       = var.enable_pipeline ? module.codebuild[0].project_name : ""
+}

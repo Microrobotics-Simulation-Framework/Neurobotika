@@ -31,9 +31,9 @@ variable "enable_pipeline" {
 }
 
 variable "gpu_instance_types" {
-  description = "GPU instance types for Batch compute environment"
+  description = "GPU instance types for Batch compute environment. Restricted to 24 GB-VRAM families (g5/g6) because SuperSynth needs ≥24 GB of RAM on GPU or CPU; g4dn.xlarge's 16 GB T4 OOMs on ex-vivo inputs."
   type        = list(string)
-  default     = ["g4dn.xlarge", "g5.xlarge", "g6.xlarge"]
+  default     = ["g6.xlarge", "g5.xlarge"]
 }
 
 variable "cpu_instance_types" {

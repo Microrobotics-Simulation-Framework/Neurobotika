@@ -11,8 +11,10 @@ variable "security_group_id" {
 }
 
 variable "gpu_instance_types" {
-  type    = list(string)
-  default = ["g4dn.xlarge", "g5.xlarge", "g6.xlarge"]
+  type = list(string)
+  # g4dn.xlarge dropped — 16 GB T4 VRAM is below SuperSynth's 24 GB
+  # minimum. g5/g6 both carry 24 GB VRAM in the 4-vCPU tier.
+  default = ["g6.xlarge", "g5.xlarge"]
 }
 
 variable "cpu_instance_types" {
