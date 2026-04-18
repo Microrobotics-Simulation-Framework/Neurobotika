@@ -43,9 +43,9 @@ variable "cpu_instance_types" {
 }
 
 variable "gpu_max_vcpus" {
-  description = "Maximum vCPUs for GPU Batch compute environment"
+  description = "Maximum vCPUs for GPU Batch compute environment. Must be ≤ the approved G-family quota in the target region — exceeding it doesn't break anything (Batch caps at the quota) but is misleading."
   type        = number
-  default     = 8
+  default     = 4
 }
 
 variable "cpu_max_vcpus" {

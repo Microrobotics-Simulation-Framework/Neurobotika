@@ -10,15 +10,16 @@ The highest resolution whole-brain MRI dataset in existence. A post-mortem human
 
 | Field | Value |
 |-------|-------|
-| Resolution | 100 um isotropic (also available at 200 um and 500 um) |
-| Coverage | Whole brain, ex vivo (no spinal cord) |
+| Resolution | 100 μm isotropic native; 200 μm and 500 μm derivatives included |
+| Coverage | Whole brain, ex vivo (no spinal cord); one subject (sub-EXC004) |
 | Format | NIfTI (.nii.gz) |
-| Size | ~2 TB per flip angle at full resolution; FLASH25 synthesized volume is much smaller |
-| Access | Free, no account required |
-| Download | [OpenNeuro ds002179](https://openneuro.org/datasets/ds002179) or [Dryad](https://datadryad.org/resource/doi:10.5061/dryad.119f80q) |
+| Size | **~95 GB** total (not 2 TB): 4× 13.6 GB raw flip angles (FA15/20/25/30) + 38 GB derivatives + 6 GB TIFF stacks + 1 GB videos |
+| Recommended subset | 200 μm volumes only (**~3.2 GB**, 3 files under `derivatives/…/processed_data/`) + 500 μm MNI quick-test (~74 MB) |
+| Access | Free, no account required; public `s3://openneuro.org/ds002179/` |
+| Download | [OpenNeuro ds002179](https://openneuro.org/datasets/ds002179) |
 | Paper | [Edlow et al., Scientific Data 2019](https://www.nature.com/articles/s41597-019-0254-8) (Open Access) |
 
-**Recommended starting point:** Download the 200 um version or the synthesized FLASH25 volume, not the full 100 um multi-flip-angle data. The 200 um version is sufficient for SynthSeg and still far beyond clinical resolution.
+**Recommended starting point:** The three 200 μm NIfTIs under `derivatives/sub-EXC004/processed_data/` — one in MNI space (pre-registered), two in native space (reoriented + cropped + downsampled). Sufficient for SynthSeg and still well beyond clinical resolution. Included for pipeline use by `download_mgh_100um.sh` alongside the tiny 500 μm MNI volume for quick-test runs.
 
 **Use in pipeline:** Primary anatomical reference for brain CSF structures. Used in Phases 2 (SynthSeg input) and 4 (manual segmentation reference for foramina, cisterns, aqueduct).
 
@@ -28,14 +29,16 @@ The standard open-access dataset for spinal cord MRI, with the PAM50 standardize
 
 | Field | Value |
 |-------|-------|
-| Subjects | 260 healthy adults across 42 centres |
+| Subjects | 260 healthy adults across 42 centres (multi-subject); for single-subject, ~20 "subjects" are the same person at different scanners |
 | Atlas | PAM50 template: spinal cord + CSF canal segmentations, C1 to S5 |
-| Format | NIfTI (BIDS-organized) |
+| Format | NIfTI (BIDS-organized), distributed via **git-annex** |
 | Access | Free, no account required |
-| Download | [Single subject (Zenodo)](https://doi.org/10.5281/zenodo.4299148) or [Multi-subject (GitHub)](https://github.com/spine-generic/data-multi-subject) |
+| Download | [Single subject (GitHub + git-annex)](https://github.com/spine-generic/data-single-subject) · [Multi-subject (GitHub)](https://github.com/spine-generic/data-multi-subject) |
 | Paper | [Cohen-Adad et al., Scientific Data 2021](https://www.nature.com/articles/s41597-021-00941-8) (Open Access) |
 
-**Use in pipeline:** Phase 3 input for spinal canal segmentation. Canal mask minus cord mask = spinal subarachnoid space.
+**Important — Zenodo caveat:** The [Zenodo mirror](https://doi.org/10.5281/zenodo.4299148) contains only a 215 KB zip of git-annex pointer files, *not* the MRI data itself. Use the GitHub repo + `git annex get` (the `download_spine_generic.sh` script handles this). The git-annex remotes `computecanada-public` and `amazon-private` hold the actual blobs.
+
+**Use in pipeline:** Phase 3 input for spinal canal segmentation. Canal mask minus cord mask = spinal subarachnoid space. Default subject: `sub-douglas`.
 
 ### Lumbosacral MRI Dataset (2024)
 

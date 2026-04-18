@@ -22,8 +22,8 @@ Neurobotika/
 │   ├── 05_registration/       # ANTs-based co-registration of brain + spine
 │   ├── 06_mesh_generation/    # Surface extraction, cleaning, and assembly
 │   ├── 07_model_training/     # (Optional) Train custom nnU-Net model
-│   ├── 08_microstructure_generation/ # SCA procedural generation of trabeculae
-│   └── 09_openusd_export/     # Assemble macro and micro meshes to OpenUSD
+│   ├── 08_microstructure_generation/ # SCA procedural generation of trabeculae (stubs)
+│   └── 09_openusd_export/     # Assemble macro and micro meshes to OpenUSD (stub)
 ├── unity/                   # Unity project for the microrobot CSF viewer
 ├── web/                     # Static site wrapper for the Unity WebGL build
 ├── infra/                   # Terraform IaC for AWS S3 + CloudFront hosting
@@ -33,20 +33,39 @@ Neurobotika/
 
 ## Quick Start
 
+### Cloud (AWS Step Functions)
+
 ```bash
-# 1. Set up Python environment
+# 1. Configure AWS and Terraform — see infra/README.md
+cd infra && cp .env.example .env && vim .env
+terraform init && terraform apply -var=enable_pipeline=true
+
+# 2. Build and push Docker images
+cd .. && ./docker/build-and-push.sh
+
+# 3. Kick off a pipeline run
+aws stepfunctions start-execution \
+  --profile neurobotika --region eu-central-1 \
+  --state-machine-arn "$(cd infra && terraform output -raw state_machine_arn)" \
+  --name "run-$(date -u +%Y-%m-%d-%H%M%S)" \
+  --input '{
+    "run_id":           "run-001",
+    "brain_subject":    "sub-EXC004",
+    "spine_subject":    "sub-douglas",
+    "run_training":     false,
+    "stop_after_phase": 99
+  }'
+```
+
+Phase 1 downloads ~3.4 GB to S3. The state machine is idempotent: rerun with the same `run_id` and completed phases are skipped. `stop_after_phase` (optional, default 99) aborts cleanly after phase N.
+
+### Local
+
+```bash
 ./scripts/setup_environment.sh
-
-# 2. Download source datasets (~50 GB for the minimal set)
-./pipeline/01_data_acquisition/download_mgh_100um.sh
-./pipeline/01_data_acquisition/download_spine_generic.sh
-
-# 3. Run the automated pipeline
+./pipeline/01_data_acquisition/run_downloads.sh --dataset mgh \
+  --s3-dest s3://neurobotika-data/runs/dev-001/raw/mgh_100um
 ./scripts/run_full_pipeline.sh
-
-# 4. Manual refinement (interactive — see docs/manual-segmentation-guide.md)
-# 5. Deploy the viewer
-cd infra && terraform apply
 ```
 
 See [docs/pipeline-overview.md](docs/pipeline-overview.md) for the full walkthrough.

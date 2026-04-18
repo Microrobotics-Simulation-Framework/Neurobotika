@@ -1,6 +1,6 @@
 # Scripts
 
-Top-level convenience scripts for setting up the environment and running the full pipeline.
+Top-level convenience scripts for local development. The canonical way to run the pipeline is via AWS Step Functions (see `pipeline/README.md` and `infra/README.md`); these scripts are for local setup and laptop-scale runs.
 
 ## Scripts
 
@@ -14,10 +14,10 @@ Sets up the Python virtual environment and installs all dependencies.
 
 ### `run_full_pipeline.sh`
 
-Runs the automated phases of the pipeline (1-3, 5-6), skipping Phase 4 (manual refinement).
+Runs the automated phases of the pipeline (1–3, 5–7) against local data, pausing at Phase 4 for manual refinement in 3D Slicer. Useful for laptop-scale development runs without needing AWS.
 
 ```bash
-./scripts/run_full_pipeline.sh [--data-dir ./data] [--gpu]
+./scripts/run_full_pipeline.sh [--data-dir ./data]
 ```
 
-Phase 4 (manual segmentation in 3D Slicer) must be done interactively. The script will pause and prompt you to complete it before continuing with Phases 5-6.
+For production-scale runs, use the Step Functions state machine deployed by `infra/` instead — it's idempotent (skip-if-done per phase), parallelises where possible, and produces a `manifest.json` for Phase 1.

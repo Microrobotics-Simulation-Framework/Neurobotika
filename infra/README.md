@@ -79,14 +79,30 @@ docker run --env-file infra/.env neurobotika-brain ...
 |----------|---------|
 | VPC + subnets | Networking for Batch + EFS |
 | S3 VPC gateway endpoint | Free S3 access from Batch (avoids NAT charges) |
-| ECR repositories (x4) | Docker images for each pipeline phase group |
+| ECR repositories (x5) | Docker images: download, brain, spine, postproc, training |
 | Batch compute env (GPU) | g4dn/g5 spot instances for segmentation + training |
 | Batch compute env (CPU) | c6i/c7i spot instances for registration + meshing |
 | Batch job queue | Shared queue with spot + on-demand fallback |
-| Batch job definitions | One per pipeline phase |
-| Step Functions state machine | Pipeline orchestration |
+| Batch job definitions | Per-phase: download-mgh, download-spine, download-lumbosacral, verify-downloads, brain-seg, spine-seg, registration, meshing, training |
+| Step Functions state machine | Pipeline orchestration — idempotent resume via per-phase S3 checks; `stop_after_phase` input for early exit |
 | SNS topic | Email notifications for Phase 4 callback |
 | EFS filesystem (optional) | Shared storage between phases |
+
+### State machine input contract
+
+Every execution is keyed on a `run_id` (caller-supplied). All S3 paths are derived from `project_name + run_id + subject ids`, so no URIs need to be constructed by hand:
+
+```json
+{
+  "run_id":           "run-2026-04-18-001",
+  "brain_subject":    "sub-EXC004",
+  "spine_subject":    "sub-douglas",
+  "run_training":     false,
+  "stop_after_phase": 1
+}
+```
+
+Rerunning with the same `run_id` resumes where the previous attempt stopped — every phase checks S3 for its expected output first and skips if present. `stop_after_phase` (default 99) aborts cleanly after the specified phase.
 
 ## Variables
 
@@ -98,7 +114,7 @@ docker run --env-file infra/.env neurobotika-brain ...
 | `enable_pipeline` | `false` | Create pipeline compute resources |
 | `gpu_instance_types` | `["g4dn.xlarge", "g5.xlarge", "g6.xlarge"]` | GPU instances for Batch |
 | `cpu_instance_types` | `["c6i.4xlarge", "c7i.4xlarge", "c6i.2xlarge"]` | CPU instances for Batch |
-| `gpu_max_vcpus` | `8` | GPU compute environment vCPU cap |
+| `gpu_max_vcpus` | `4` | GPU compute environment vCPU cap. Keep aligned with approved G-family quota. |
 | `cpu_max_vcpus` | `32` | CPU compute environment vCPU cap |
 | `enable_efs` | `false` | Create EFS filesystem |
 | `notification_email` | `""` | Email for Phase 4 notifications |
@@ -107,12 +123,14 @@ docker run --env-file infra/.env neurobotika-brain ...
 
 New AWS accounts have restrictive defaults. Before running the pipeline, request quota increases in eu-central-1 via the [Service Quotas console](https://console.aws.amazon.com/servicequotas/):
 
-| Quota | Default | Request |
-|-------|---------|---------|
-| G and VT On-Demand instances | 0 vCPUs | 4 vCPUs |
-| G and VT Spot instances | 0 vCPUs | 8 vCPUs |
-| Standard On-Demand instances | 5 vCPUs | 16 vCPUs |
-| Standard Spot instances | 5 vCPUs | 32 vCPUs |
+| Quota | New-account default | Minimum request | Notes |
+|-------|---------------------|-----------------|-------|
+| G and VT On-Demand instances | 0 vCPUs | **4 vCPUs** | One g4dn.xlarge at a time |
+| G and VT Spot instances | 0 vCPUs | **4 vCPUs** | Ask for 8 if you need parallel brain+spine seg |
+| Standard On-Demand instances | 5 vCPUs | 16 vCPUs | Currently applied: 32 vCPUs on new accounts |
+| Standard Spot instances | 5 vCPUs | 16 vCPUs | Currently applied: 32 vCPUs on new accounts |
+
+Run `./check-quotas.sh` after your initial Terraform apply to verify what's actually granted. AWS has been silently applying higher Standard defaults on newer accounts (often 32, not 5).
 
 See [docs/cloud-pipeline.md](../docs/cloud-pipeline.md) for full details.
 

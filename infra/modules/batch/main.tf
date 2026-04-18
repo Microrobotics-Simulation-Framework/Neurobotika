@@ -116,10 +116,10 @@ resource "aws_batch_compute_environment" "gpu_spot" {
     min_vcpus = 0
     max_vcpus = var.gpu_max_vcpus
 
-    instance_type       = var.gpu_instance_types
-    instance_role       = aws_iam_instance_profile.ecs_instance.arn
-    subnets             = var.subnet_ids
-    security_group_ids  = [var.security_group_id]
+    instance_type      = var.gpu_instance_types
+    instance_role      = aws_iam_instance_profile.ecs_instance.arn
+    subnets            = var.subnet_ids
+    security_group_ids = [var.security_group_id]
   }
 
   lifecycle {
@@ -140,10 +140,10 @@ resource "aws_batch_compute_environment" "gpu_ondemand" {
     min_vcpus = 0
     max_vcpus = var.gpu_max_vcpus
 
-    instance_type       = var.gpu_instance_types
-    instance_role       = aws_iam_instance_profile.ecs_instance.arn
-    subnets             = var.subnet_ids
-    security_group_ids  = [var.security_group_id]
+    instance_type      = var.gpu_instance_types
+    instance_role      = aws_iam_instance_profile.ecs_instance.arn
+    subnets            = var.subnet_ids
+    security_group_ids = [var.security_group_id]
   }
 
   lifecycle {
@@ -167,10 +167,10 @@ resource "aws_batch_compute_environment" "cpu_spot" {
     min_vcpus = 0
     max_vcpus = var.cpu_max_vcpus
 
-    instance_type       = var.cpu_instance_types
-    instance_role       = aws_iam_instance_profile.ecs_instance.arn
-    subnets             = var.subnet_ids
-    security_group_ids  = [var.security_group_id]
+    instance_type      = var.cpu_instance_types
+    instance_role      = aws_iam_instance_profile.ecs_instance.arn
+    subnets            = var.subnet_ids
+    security_group_ids = [var.security_group_id]
   }
 
   lifecycle {
@@ -191,10 +191,10 @@ resource "aws_batch_compute_environment" "cpu_ondemand" {
     min_vcpus = 0
     max_vcpus = var.cpu_max_vcpus
 
-    instance_type       = var.cpu_instance_types
-    instance_role       = aws_iam_instance_profile.ecs_instance.arn
-    subnets             = var.subnet_ids
-    security_group_ids  = [var.security_group_id]
+    instance_type      = var.cpu_instance_types
+    instance_role      = aws_iam_instance_profile.ecs_instance.arn
+    subnets            = var.subnet_ids
+    security_group_ids = [var.security_group_id]
   }
 
   lifecycle {
@@ -283,7 +283,7 @@ locals {
     {
       name = "pipeline-efs"
       efsVolumeConfiguration = {
-        fileSystemId = var.efs_file_system_id
+        fileSystemId  = var.efs_file_system_id
         rootDirectory = "/"
       }
     }
@@ -297,14 +297,75 @@ locals {
   ] : []
 
   job_definitions = {
-    download = {
-      name      = "${var.project_name}-download"
-      image_key = "brain"
+    download-mgh = {
+      name      = "${var.project_name}-download-mgh"
+      image_key = "download"
       vcpus     = 4
-      memory    = 8192
+      memory    = 4096
       gpu       = 0
       queue     = "cpu"
-      command   = ["python", "/app/01/verify_downloads.py", "--data-dir", "/tmp/data"]
+      command = [
+        "bash", "/app/01/run_downloads.sh",
+        "--dataset", "mgh",
+        "--subject", "Ref::subject",
+        "--s3-dest", "Ref::s3_dest",
+      ]
+      parameters = {
+        subject = "sub-EXC004"
+        s3_dest = ""
+      }
+    }
+    download-spine = {
+      name      = "${var.project_name}-download-spine"
+      image_key = "download"
+      vcpus     = 4
+      memory    = 4096
+      gpu       = 0
+      queue     = "cpu"
+      command = [
+        "bash", "/app/01/run_downloads.sh",
+        "--dataset", "spine",
+        "--subject", "Ref::subject",
+        "--s3-dest", "Ref::s3_dest",
+      ]
+      parameters = {
+        subject = "sub-douglas"
+        s3_dest = ""
+      }
+    }
+    download-lumbosacral = {
+      name      = "${var.project_name}-download-lumbosacral"
+      image_key = "download"
+      vcpus     = 4
+      memory    = 4096
+      gpu       = 0
+      queue     = "cpu"
+      command = [
+        "bash", "/app/01/run_downloads.sh",
+        "--dataset", "lumbosacral",
+        "--s3-dest", "Ref::s3_dest",
+      ]
+      parameters = {
+        s3_dest = ""
+      }
+    }
+    verify-downloads = {
+      name      = "${var.project_name}-verify-downloads"
+      image_key = "download"
+      vcpus     = 4
+      memory    = 4096
+      gpu       = 0
+      queue     = "cpu"
+      command = [
+        "python", "/app/01/verify_downloads.py",
+        "--s3-prefix", "Ref::s3_prefix",
+        "--manifest-out", "Ref::manifest_out",
+        "--verbose",
+      ]
+      parameters = {
+        s3_prefix    = ""
+        manifest_out = ""
+      }
     }
     brain-seg = {
       name      = "${var.project_name}-brain-seg"
@@ -362,6 +423,10 @@ resource "aws_batch_job_definition" "this" {
 
   platform_capabilities = ["EC2"]
 
+  # Default values for Batch parameters referenced as Ref::name in the command.
+  # Step Functions overrides these per-execution via the Parameters block.
+  parameters = try(each.value.parameters, {})
+
   retry_strategy {
     attempts = 3
 
@@ -377,7 +442,11 @@ resource "aws_batch_job_definition" "this" {
   }
 
   timeout {
-    attempt_duration_seconds = each.key == "training" ? 86400 : 7200
+    attempt_duration_seconds = (
+      each.key == "training" ? 86400 :
+      startswith(each.key, "download-") || each.key == "verify-downloads" ? 1800 :
+      7200
+    )
   }
 
   container_properties = jsonencode({
@@ -392,7 +461,7 @@ resource "aws_batch_job_definition" "this" {
       each.value.gpu > 0 ? [{ type = "GPU", value = tostring(each.value.gpu) }] : []
     )
 
-    jobRoleArn      = aws_iam_role.job_execution.arn
+    jobRoleArn       = aws_iam_role.job_execution.arn
     executionRoleArn = aws_iam_role.job_execution.arn
 
     logConfiguration = {
@@ -403,8 +472,8 @@ resource "aws_batch_job_definition" "this" {
       }
     }
 
-    volumes      = local.efs_volumes
-    mountPoints  = local.efs_mount_points
+    volumes     = local.efs_volumes
+    mountPoints = local.efs_mount_points
 
     environment = [
       { name = "AWS_DEFAULT_REGION", value = "eu-central-1" },

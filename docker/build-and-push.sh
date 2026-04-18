@@ -15,6 +15,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Auto-source infra/.env so callers don't have to remember `set -a`.
+ENV_FILE="${PROJECT_ROOT}/infra/.env"
+if [ -z "${AWS_ACCOUNT_ID:-}" ] && [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 : "${AWS_ACCOUNT_ID:?Set AWS_ACCOUNT_ID in infra/.env or environment}"
 : "${AWS_REGION:=eu-central-1}"
 : "${AWS_PROFILE:=neurobotika}"
@@ -29,7 +38,7 @@ echo "Logging in to ECR: ${REGISTRY} (profile: ${AWS_PROFILE})"
 aws ecr get-login-password --region "${AWS_REGION}" --profile "${AWS_PROFILE}" | \
   docker login --username AWS --password-stdin "${REGISTRY}"
 
-IMAGES=("brain" "spine" "postproc" "training")
+IMAGES=("download" "brain" "spine" "postproc" "training")
 
 # If a specific image is requested, build only that one
 if [ $# -gt 0 ]; then

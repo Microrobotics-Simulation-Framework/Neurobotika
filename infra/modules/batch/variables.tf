@@ -16,8 +16,10 @@ variable "gpu_instance_types" {
 }
 
 variable "cpu_instance_types" {
-  type    = list(string)
-  default = ["c6i.4xlarge", "c7i.4xlarge", "c6i.2xlarge"]
+  type = list(string)
+  # c6gn.xlarge included so Phase 1 download jobs land on network-optimised
+  # instances at their requested 4 vCPU footprint.
+  default = ["c6i.4xlarge", "c7i.4xlarge", "c6i.2xlarge", "c6gn.xlarge"]
 }
 
 variable "gpu_max_vcpus" {

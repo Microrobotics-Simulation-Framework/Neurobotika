@@ -32,8 +32,8 @@ resource "aws_s3_bucket_policy" "cloudfront_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "CloudFrontReadAccess"
-        Effect    = "Allow"
+        Sid    = "CloudFrontReadAccess"
+        Effect = "Allow"
         Principal = {
           AWS = aws_cloudfront_origin_access_identity.this.iam_arn
         }

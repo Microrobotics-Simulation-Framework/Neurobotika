@@ -1,6 +1,6 @@
 # Pipeline Overview
 
-The pipeline transforms raw MRI datasets into a complete, watertight 3D mesh of the human CSF system. It is organized into seven sequential phases, each corresponding to a directory under `pipeline/`.
+The pipeline transforms raw MRI datasets into a complete, watertight 3D mesh of the human CSF system. It is organized into nine phases, each corresponding to a directory under `pipeline/`. Phases 1–7 are the implemented macro pipeline; phases 8–9 are the microstructure + OpenUSD export work that is currently stubbed.
 
 ## Prerequisites
 
@@ -27,15 +27,16 @@ The pipeline transforms raw MRI datasets into a complete, watertight 3D mesh of 
 
 ### Phase 1: Data Acquisition
 
-Downloads the source MRI datasets. See [datasets.md](datasets.md) for full details on each dataset.
+Downloads the source MRI datasets and uploads them to S3. The entry point in cloud mode is `run_downloads.sh`, invoked by three parallel Batch jobs (one per dataset); a fourth `verify-downloads` job writes a `manifest.json` that the state machine uses as the skip-marker for idempotent resumes. See [datasets.md](datasets.md) for dataset provenance and `pipeline/01_data_acquisition/README.md` for script-level detail.
 
 **Scripts:**
-- `download_mgh_100um.sh` — Downloads the MGH 100 um ex vivo brain from OpenNeuro (start with the 200 um or FLASH25 synthesized volume to save space)
-- `download_spine_generic.sh` — Downloads the Spine Generic single-subject dataset from Zenodo
-- `download_lumbosacral.sh` — Downloads the lumbosacral MRI dataset
-- `verify_downloads.py` — Validates file integrity with checksums
+- `run_downloads.sh` — Dispatcher used by AWS Batch jobs; selects per-dataset script.
+- `download_mgh_100um.sh` — Server-side S3-to-S3 copy from public `s3://openneuro.org/` of the 200 μm + 500 μm volumes (~3.2 GB). No openneuro-cli dependency.
+- `download_spine_generic.sh` — Clones `github.com/spine-generic/data-single-subject` and runs `git annex get` for the selected subject. Requires the git-annex branch, so a full (not shallow) clone is used.
+- `download_lumbosacral.sh` — Clones SpineNerveModelGenerator scripts. The MRI volumes referenced in the paper must be fetched manually.
+- `verify_downloads.py` — NIfTI header checks; supports both `--data-dir` (local) and `--s3-prefix` (cloud) modes, and writes `manifest.json`.
 
-**Outputs:** Raw NIfTI files in `data/raw/{mgh_100um,spine_generic,lumbosacral}/`
+**Outputs:** Under `s3://neurobotika-data/runs/<run_id>/raw/{mgh_100um,spine_generic,lumbosacral}/` plus `manifest.json`.
 
 ### Phase 2: Brain Segmentation
 
@@ -141,15 +142,35 @@ Unifies the huge macro-meshes and millions of micro-scale trabecular struts into
 
 ## Running the Pipeline
 
+### Cloud (AWS Step Functions)
+
 ```bash
-# Full automated pipeline (Phases 1-3, 5-6; skips Phase 4 manual work)
+aws stepfunctions start-execution \
+  --profile neurobotika --region eu-central-1 \
+  --state-machine-arn "$(cd infra && terraform output -raw state_machine_arn)" \
+  --name "run-$(date -u +%Y-%m-%d-%H%M%S)" \
+  --input '{
+    "run_id":           "run-001",
+    "brain_subject":    "sub-EXC004",
+    "spine_subject":    "sub-douglas",
+    "run_training":     false,
+    "stop_after_phase": 1
+  }'
+```
+
+The state machine is idempotent — rerunning with the same `run_id` skips any phase whose output is already in S3 (via `s3:HeadObject` / `ListObjectsV2` checks). `stop_after_phase` (optional, default 99) aborts cleanly after the specified phase.
+
+### Local
+
+```bash
+# Laptop-scale, sequential, local filesystem
 ./scripts/run_full_pipeline.sh
 
 # Or run individual phases
-python pipeline/02_brain_segmentation/run_synthseg.py --input data/raw/mgh_100um/brain_200um.nii.gz
-
-# With S3 integration
 python pipeline/02_brain_segmentation/run_synthseg.py \
-    --input s3://neurobotika-data/raw/mgh_100um/brain_200um.nii.gz \
-    --output s3://neurobotika-data/segmentations/brain/
+    --input data/raw/mgh_100um/sub-EXC004/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz
+
+python pipeline/02_brain_segmentation/run_synthseg.py \
+    --input s3://neurobotika-data/runs/run-001/raw/mgh_100um/sub-EXC004/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz \
+    --output s3://neurobotika-data/runs/run-001/seg/brain/sub-EXC004.nii.gz
 ```

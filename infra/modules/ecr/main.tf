@@ -4,7 +4,7 @@ variable "project_name" {
 
 variable "repository_names" {
   type    = list(string)
-  default = ["brain", "spine", "postproc", "training"]
+  default = ["download", "brain", "spine", "postproc", "training"]
 }
 
 resource "aws_ecr_repository" "this" {

@@ -20,6 +20,15 @@ variable "notification_email" {
   default = ""
 }
 
+variable "data_bucket_arn" {
+  description = "ARN of the S3 bucket where pipeline artifacts live. Used by the state machine's idempotency checks (s3:HeadObject / ListObjectsV2)."
+  type        = string
+}
+
+locals {
+  data_bucket_name = "${var.project_name}-data"
+}
+
 # --- SNS Topic for Phase 4 notifications ---
 
 resource "aws_sns_topic" "manual_notify" {
@@ -76,6 +85,18 @@ data "aws_iam_policy_document" "sfn_policy" {
     ]
     resources = ["*"]
   }
+
+  # S3 read — for the per-phase idempotency checks (HeadObject + ListObjectsV2).
+  statement {
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket",
+    ]
+    resources = [
+      var.data_bucket_arn,
+      "${var.data_bucket_arn}/*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "sfn" {
@@ -90,47 +111,129 @@ resource "aws_sfn_state_machine" "pipeline" {
   name     = "${var.project_name}-pipeline"
   role_arn = aws_iam_role.sfn.arn
 
+  # Input contract:
+  #
+  #   {
+  #     "run_id":           "run-2026-04-18-001",
+  #     "brain_subject":    "sub-EXC004",
+  #     "spine_subject":    "sub-douglas",
+  #     "run_training":     false,
+  #     "stop_after_phase": 1       // optional; omit to run through to the end
+  #   }
+  #
+  # Every S3 path is derived from run_id + project_name + subject ids; the
+  # caller never has to construct URIs by hand.
+  #
+  # Idempotency: before each phase runs, a Check state probes S3 for the
+  # expected output. If present, the phase is skipped. A fresh execution
+  # with the same run_id therefore resumes where the previous run left off
+  # — re-runs after a quota-starved failure cost nothing for the
+  # already-completed phases.
+  #
+  # stop_after_phase: if set to N, the state machine exits cleanly after
+  # phase N's gate fires. Useful while downstream phases aren't implemented
+  # or while GPU quota is pending. Omitting it runs the full pipeline.
+
   definition = jsonencode({
-    Comment = "Neurobotika CSF pipeline"
-    StartAt = "Phase1_Download"
+    Comment = "Neurobotika CSF pipeline (idempotent + early-stop)"
+    StartAt = "Init_CheckStopAfter"
     States = {
-      Phase1_Download = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::batch:submitJob.sync"
+
+      # -----------------------------------------------------------------
+      # 0a. Default stop_after_phase to 99 (= "run everything") if the
+      # caller omitted it. PrepareContext then uniformly reads $.stop_after_phase.
+      # -----------------------------------------------------------------
+      Init_CheckStopAfter = {
+        Type = "Choice"
+        Choices = [{
+          Variable  = "$.stop_after_phase"
+          IsPresent = true
+          Next      = "PrepareContext"
+        }]
+        Default = "Init_SetDefaultStopAfter"
+      }
+
+      Init_SetDefaultStopAfter = {
+        Type       = "Pass"
+        Result     = 99
+        ResultPath = "$.stop_after_phase"
+        Next       = "PrepareContext"
+      }
+
+      # -----------------------------------------------------------------
+      # 0b. Derive every downstream path from (project_name, run_id).
+      # Pass stop_after_phase through so the Gate_* states can read it.
+      # -----------------------------------------------------------------
+      PrepareContext = {
+        Type = "Pass"
         Parameters = {
-          JobName       = "phase1-download"
-          JobQueue      = var.cpu_job_queue_arn
-          JobDefinition = lookup(var.job_definition_arns, "download", "")
-          Parameters = {
-            "input.$"  = "$.input_s3_uri"
-          }
+          "brain_subject.$"       = "$.brain_subject"
+          "spine_subject.$"       = "$.spine_subject"
+          "run_id.$"              = "$.run_id"
+          "run_training.$"        = "$.run_training"
+          "stop_after_phase.$"    = "$.stop_after_phase"
+          "s3_root.$"             = "States.Format('s3://${local.data_bucket_name}/runs/{}', $.run_id)"
+          "raw_prefix.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw', $.run_id)"
+          "manifest_out.$"        = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/manifest.json', $.run_id)"
+          "mgh_dest.$"            = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/mgh_100um', $.run_id)"
+          "spine_dest.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic', $.run_id)"
+          "lumbosacral_dest.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lumbosacral', $.run_id)"
+          "brain_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/mgh_100um/{}/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz', $.run_id, $.brain_subject)"
+          "brain_output.$"        = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/brain/{}.nii.gz', $.run_id, $.brain_subject)"
+          "spine_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic/{}/{}/anat/{}_T2w.nii.gz', $.run_id, $.spine_subject, $.spine_subject, $.spine_subject)"
+          "spine_output_dir.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/spine/{}', $.run_id, $.spine_subject)"
+          "registration_input.$"  = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/merged.nii.gz', $.run_id)"
+          "registration_output.$" = "States.Format('s3://${local.data_bucket_name}/runs/{}/registered/merged.nii.gz', $.run_id)"
+          "meshing_input.$"       = "States.Format('s3://${local.data_bucket_name}/runs/{}/registered/merged.nii.gz', $.run_id)"
+          "meshing_output_dir.$"  = "States.Format('s3://${local.data_bucket_name}/runs/{}/meshes', $.run_id)"
+
+          # S3 keys (no s3:// prefix) for HeadObject / ListObjectsV2 calls:
+          "manifest_key.$"            = "States.Format('runs/{}/raw/manifest.json', $.run_id)"
+          "brain_output_key.$"        = "States.Format('runs/{}/seg/brain/{}.nii.gz', $.run_id, $.brain_subject)"
+          "spine_output_prefix.$"     = "States.Format('runs/{}/seg/spine/{}/', $.run_id, $.spine_subject)"
+          "registration_output_key.$" = "States.Format('runs/{}/registered/merged.nii.gz', $.run_id)"
+          "meshing_output_prefix.$"   = "States.Format('runs/{}/meshes/', $.run_id)"
         }
-        ResultPath = "$.phase1"
-        Next       = "ParallelSegmentation"
-        Retry = [{
-          ErrorEquals     = ["States.TaskFailed"]
-          IntervalSeconds = 60
-          MaxAttempts     = 2
-          BackoffRate     = 2
+        ResultPath = "$"
+        Next       = "Check_Phase1"
+      }
+
+      # -----------------------------------------------------------------
+      # Phase 1 — downloads + verify.
+      # Skip-marker: raw/manifest.json written by the verify job.
+      # -----------------------------------------------------------------
+      Check_Phase1 = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:s3:headObject"
+        Parameters = {
+          Bucket  = local.data_bucket_name
+          "Key.$" = "$.manifest_key"
+        }
+        ResultPath = "$.phase1_check"
+        Next       = "Gate_AfterPhase1"
+        Catch = [{
+          ErrorEquals = ["States.ALL"]
+          ResultPath  = "$.phase1_check"
+          Next        = "Phase1_Download"
         }]
       }
 
-      ParallelSegmentation = {
+      Phase1_Download = {
         Type = "Parallel"
         Branches = [
           {
-            StartAt = "Phase2_BrainSeg"
+            StartAt = "Download_MGH"
             States = {
-              Phase2_BrainSeg = {
+              Download_MGH = {
                 Type     = "Task"
                 Resource = "arn:aws:states:::batch:submitJob.sync"
                 Parameters = {
-                  JobName       = "phase2-brain-seg"
-                  JobQueue      = var.gpu_job_queue_arn
-                  JobDefinition = lookup(var.job_definition_arns, "brain-seg", "")
+                  JobName       = "phase1-download-mgh"
+                  JobQueue      = var.cpu_job_queue_arn
+                  JobDefinition = lookup(var.job_definition_arns, "download-mgh", "")
                   Parameters = {
-                    "input.$"  = "$.brain_input"
-                    "output.$" = "$.brain_output"
+                    "subject.$" = "$.brain_subject"
+                    "s3_dest.$" = "$.mgh_dest"
                   }
                 }
                 End = true
@@ -144,18 +247,42 @@ resource "aws_sfn_state_machine" "pipeline" {
             }
           },
           {
-            StartAt = "Phase3_SpineSeg"
+            StartAt = "Download_Spine"
             States = {
-              Phase3_SpineSeg = {
+              Download_Spine = {
                 Type     = "Task"
                 Resource = "arn:aws:states:::batch:submitJob.sync"
                 Parameters = {
-                  JobName       = "phase3-spine-seg"
-                  JobQueue      = var.gpu_job_queue_arn
-                  JobDefinition = lookup(var.job_definition_arns, "spine-seg", "")
+                  JobName       = "phase1-download-spine"
+                  JobQueue      = var.cpu_job_queue_arn
+                  JobDefinition = lookup(var.job_definition_arns, "download-spine", "")
                   Parameters = {
-                    "input.$"      = "$.spine_input"
-                    "output_dir.$" = "$.spine_output_dir"
+                    "subject.$" = "$.spine_subject"
+                    "s3_dest.$" = "$.spine_dest"
+                  }
+                }
+                End = true
+                Retry = [{
+                  ErrorEquals     = ["States.TaskFailed"]
+                  IntervalSeconds = 60
+                  MaxAttempts     = 2
+                  BackoffRate     = 2
+                }]
+              }
+            }
+          },
+          {
+            StartAt = "Download_Lumbosacral"
+            States = {
+              Download_Lumbosacral = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::batch:submitJob.sync"
+                Parameters = {
+                  JobName       = "phase1-download-lumbosacral"
+                  JobQueue      = var.cpu_job_queue_arn
+                  JobDefinition = lookup(var.job_definition_arns, "download-lumbosacral", "")
+                  Parameters = {
+                    "s3_dest.$" = "$.lumbosacral_dest"
                   }
                 }
                 End = true
@@ -169,8 +296,168 @@ resource "aws_sfn_state_machine" "pipeline" {
             }
           }
         ]
+        ResultPath = "$.phase1_downloads"
+        Next       = "Phase1_Verify"
+      }
+
+      Phase1_Verify = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::batch:submitJob.sync"
+        Parameters = {
+          JobName       = "phase1-verify"
+          JobQueue      = var.cpu_job_queue_arn
+          JobDefinition = lookup(var.job_definition_arns, "verify-downloads", "")
+          Parameters = {
+            "s3_prefix.$"    = "$.raw_prefix"
+            "manifest_out.$" = "$.manifest_out"
+          }
+        }
+        ResultPath = "$.phase1_verify"
+        Next       = "Gate_AfterPhase1"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 30
+          MaxAttempts     = 1
+          BackoffRate     = 2
+        }]
+      }
+
+      Gate_AfterPhase1 = {
+        Type = "Choice"
+        Choices = [{
+          And = [
+            { Variable = "$.stop_after_phase", IsPresent = true },
+            { Variable = "$.stop_after_phase", NumericLessThanEquals = 1 }
+          ]
+          Next = "Done"
+        }]
+        Default = "ParallelSegmentation"
+      }
+
+      # -----------------------------------------------------------------
+      # Phase 2 + Phase 3 — parallel segmentation.
+      # Each branch checks its own output before submitting to GPU.
+      # MaxAttempts=1 on the GPU tasks so a real failure doesn't burn
+      # retry budget while the quota-sharing sibling is still running.
+      # -----------------------------------------------------------------
+      ParallelSegmentation = {
+        Type = "Parallel"
+        Branches = [
+          {
+            StartAt = "Check_Phase2"
+            States = {
+              Check_Phase2 = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:s3:headObject"
+                Parameters = {
+                  Bucket  = local.data_bucket_name
+                  "Key.$" = "$.brain_output_key"
+                }
+                ResultPath = "$.phase2_check"
+                Next       = "Skip_Phase2"
+                Catch = [{
+                  ErrorEquals = ["States.ALL"]
+                  ResultPath  = "$.phase2_check"
+                  Next        = "Phase2_BrainSeg"
+                }]
+              }
+              Phase2_BrainSeg = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::batch:submitJob.sync"
+                Parameters = {
+                  JobName       = "phase2-brain-seg"
+                  JobQueue      = var.gpu_job_queue_arn
+                  JobDefinition = lookup(var.job_definition_arns, "brain-seg", "")
+                  Parameters = {
+                    "input.$"  = "$.brain_input"
+                    "output.$" = "$.brain_output"
+                  }
+                }
+                End = true
+                # No retry: when quota is 4 vCPU and both branches share it,
+                # a genuine failure here should surface immediately rather
+                # than spin. Re-run the state machine with the same run_id
+                # to resume — idempotency will skip what already succeeded.
+              }
+              Skip_Phase2 = { Type = "Succeed" }
+            }
+          },
+          {
+            StartAt = "Check_Phase3"
+            States = {
+              Check_Phase3 = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:s3:listObjectsV2"
+                Parameters = {
+                  Bucket     = local.data_bucket_name
+                  "Prefix.$" = "$.spine_output_prefix"
+                  MaxKeys    = 1
+                }
+                ResultPath = "$.phase3_check"
+                Next       = "Gate_Phase3_Exists"
+              }
+              Gate_Phase3_Exists = {
+                Type = "Choice"
+                Choices = [{
+                  Variable           = "$.phase3_check.KeyCount"
+                  NumericGreaterThan = 0
+                  Next               = "Skip_Phase3"
+                }]
+                Default = "Phase3_SpineSeg"
+              }
+              Phase3_SpineSeg = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::batch:submitJob.sync"
+                Parameters = {
+                  JobName       = "phase3-spine-seg"
+                  JobQueue      = var.gpu_job_queue_arn
+                  JobDefinition = lookup(var.job_definition_arns, "spine-seg", "")
+                  Parameters = {
+                    "input.$"      = "$.spine_input"
+                    "output_dir.$" = "$.spine_output_dir"
+                  }
+                }
+                End = true
+              }
+              Skip_Phase3 = { Type = "Succeed" }
+            }
+          }
+        ]
         ResultPath = "$.parallel_seg"
-        Next       = "Phase4_Notify"
+        Next       = "Gate_AfterPhase2_3"
+      }
+
+      Gate_AfterPhase2_3 = {
+        Type = "Choice"
+        Choices = [{
+          And = [
+            { Variable = "$.stop_after_phase", IsPresent = true },
+            { Variable = "$.stop_after_phase", NumericLessThanEquals = 3 }
+          ]
+          Next = "Done"
+        }]
+        Default = "Check_Phase5"
+      }
+
+      # -----------------------------------------------------------------
+      # Phase 4 + Phase 5 — we gate them together on phase 5's output:
+      # if the registered volume exists, phase 4's manual step was done
+      # previously and phase 5 already produced output, so skip both.
+      # -----------------------------------------------------------------
+      Check_Phase5 = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:s3:headObject"
+        Parameters = {
+          Bucket  = local.data_bucket_name
+          "Key.$" = "$.registration_output_key"
+        }
+        ResultPath = "$.phase5_check"
+        Next       = "Gate_AfterPhase5"
+        Catch = [{
+          ErrorEquals = ["States.ALL"]
+          ResultPath  = "$.phase5_check"
+          Next        = "Phase4_Notify"
+        }]
       }
 
       Phase4_Notify = {
@@ -202,13 +489,50 @@ resource "aws_sfn_state_machine" "pipeline" {
           }
         }
         ResultPath = "$.phase5"
-        Next       = "Phase6_Meshing"
+        Next       = "Gate_AfterPhase5"
         Retry = [{
           ErrorEquals     = ["States.TaskFailed"]
           IntervalSeconds = 60
           MaxAttempts     = 2
           BackoffRate     = 2
         }]
+      }
+
+      Gate_AfterPhase5 = {
+        Type = "Choice"
+        Choices = [{
+          And = [
+            { Variable = "$.stop_after_phase", IsPresent = true },
+            { Variable = "$.stop_after_phase", NumericLessThanEquals = 5 }
+          ]
+          Next = "Done"
+        }]
+        Default = "Check_Phase6"
+      }
+
+      # -----------------------------------------------------------------
+      # Phase 6 — meshing. Output is a directory; use ListObjectsV2.
+      # -----------------------------------------------------------------
+      Check_Phase6 = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:s3:listObjectsV2"
+        Parameters = {
+          Bucket     = local.data_bucket_name
+          "Prefix.$" = "$.meshing_output_prefix"
+          MaxKeys    = 1
+        }
+        ResultPath = "$.phase6_check"
+        Next       = "Gate_Phase6_Exists"
+      }
+
+      Gate_Phase6_Exists = {
+        Type = "Choice"
+        Choices = [{
+          Variable           = "$.phase6_check.KeyCount"
+          NumericGreaterThan = 0
+          Next               = "Gate_AfterPhase6"
+        }]
+        Default = "Phase6_Meshing"
       }
 
       Phase6_Meshing = {
@@ -224,7 +548,7 @@ resource "aws_sfn_state_machine" "pipeline" {
           }
         }
         ResultPath = "$.phase6"
-        Next       = "ShouldTrain"
+        Next       = "Gate_AfterPhase6"
         Retry = [{
           ErrorEquals     = ["States.TaskFailed"]
           IntervalSeconds = 60
@@ -233,12 +557,29 @@ resource "aws_sfn_state_machine" "pipeline" {
         }]
       }
 
+      Gate_AfterPhase6 = {
+        Type = "Choice"
+        Choices = [{
+          And = [
+            { Variable = "$.stop_after_phase", IsPresent = true },
+            { Variable = "$.stop_after_phase", NumericLessThanEquals = 6 }
+          ]
+          Next = "Done"
+        }]
+        Default = "ShouldTrain"
+      }
+
+      # -----------------------------------------------------------------
+      # Phase 7 — training (optional; no idempotency check because
+      # re-running training is almost always the desired behaviour when
+      # run_training is set true).
+      # -----------------------------------------------------------------
       ShouldTrain = {
         Type = "Choice"
         Choices = [{
-          Variable     = "$.run_training"
+          Variable      = "$.run_training"
           BooleanEquals = true
-          Next         = "Phase7_Training"
+          Next          = "Phase7_Training"
         }]
         Default = "Done"
       }

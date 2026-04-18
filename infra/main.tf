@@ -38,12 +38,12 @@ module "data_bucket" {
 }
 
 module "cdn" {
-  source             = "./modules/cloudfront"
-  project_name       = var.project_name
-  web_bucket_id      = module.web_bucket.bucket_id
-  web_bucket_arn     = module.web_bucket.bucket_arn
-  web_bucket_domain  = module.web_bucket.bucket_regional_domain_name
-  domain_name        = var.domain_name
+  source            = "./modules/cloudfront"
+  project_name      = var.project_name
+  web_bucket_id     = module.web_bucket.bucket_id
+  web_bucket_arn    = module.web_bucket.bucket_arn
+  web_bucket_domain = module.web_bucket.bucket_regional_domain_name
+  domain_name       = var.domain_name
 }
 
 # ============================================================
@@ -95,4 +95,5 @@ module "step_functions" {
   cpu_job_queue_arn   = module.batch[0].cpu_job_queue_arn
   job_definition_arns = module.batch[0].job_definition_arns
   notification_email  = var.notification_email
+  data_bucket_arn     = module.data_bucket.bucket_arn
 }

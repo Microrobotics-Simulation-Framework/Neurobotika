@@ -1,56 +1,83 @@
 #!/usr/bin/env bash
-# Download the MGH 100um ex vivo brain dataset from OpenNeuro.
-# By default downloads only the 200um version. Use --full for the complete dataset.
+# Fetch MGH ex vivo brain MRI at 200 μm (+ a 500 μm quick-test volume) for a
+# given subject of OpenNeuro ds002179 and upload the files to S3.
 #
-# Source: https://openneuro.org/datasets/ds002179
-# Paper: Edlow et al., Scientific Data 2019
+# Source: s3://openneuro.org/ds002179/  (public, us-east-1)
+# Paper:  Edlow et al., Scientific Data 2019
+#
+# ds002179 has a single subject today (sub-EXC004). The --subject flag is
+# kept so the input contract remains stable when additional subjects are
+# published, but will error out if the subject isn't in the dataset.
 
 set -euo pipefail
 
-DATASET_ID="ds002179"
-OUTPUT_DIR="data/raw/mgh_100um"
-FULL=false
+SUBJECT="sub-EXC004"
+S3_DEST=""
+WORK_DIR="${WORK_DIR:-/tmp/mgh_download}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --full) FULL=true; shift ;;
-        --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+        --subject)  SUBJECT="$2"; shift 2 ;;
+        --s3-dest)  S3_DEST="$2"; shift 2 ;;
+        --work-dir) WORK_DIR="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 [--full] [--output-dir DIR]"
-            echo "  --full        Download full 100um dataset (~2 TB)"
-            echo "  --output-dir  Target directory (default: data/raw/mgh_100um)"
+            cat <<EOF
+Usage: $0 --subject SUB --s3-dest s3://bucket/prefix [--work-dir DIR]
+
+Downloads MGH 200 μm volumes (+ 500 μm quick-test) for SUB from the public
+OpenNeuro bucket and uploads them to s3://bucket/prefix/SUB/.
+EOF
             exit 0
             ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
-mkdir -p "$OUTPUT_DIR"
-
-echo "=== Downloading MGH 100um Ex Vivo Brain ==="
-echo "Dataset: OpenNeuro ${DATASET_ID}"
-echo "Output:  ${OUTPUT_DIR}"
-echo ""
-
-# Check for openneuro-cli or aws cli
-if command -v openneuro &> /dev/null; then
-    echo "Using openneuro-cli..."
-    if [ "$FULL" = true ]; then
-        openneuro download --dataset "$DATASET_ID" "$OUTPUT_DIR"
-    else
-        echo "Downloading 200um version only (use --full for complete dataset)"
-        # TODO: Specify exact file paths for selective download once dataset structure is confirmed
-        openneuro download --dataset "$DATASET_ID" "$OUTPUT_DIR"
-    fi
-else
-    echo "openneuro-cli not found."
-    echo ""
-    echo "Install it:  npm install -g @openneuro/cli"
-    echo "Or download manually from: https://openneuro.org/datasets/${DATASET_ID}"
-    echo "Alternative mirror: https://datadryad.org/resource/doi:10.5061/dryad.119f80q"
+if [ -z "$S3_DEST" ]; then
+    echo "Error: --s3-dest is required" >&2
     exit 1
 fi
 
+SRC_BASE="s3://openneuro.org/ds002179/derivatives/${SUBJECT}/processed_data"
+DST_BASE="${S3_DEST%/}/${SUBJECT}"
+
+# Relative paths under SRC_BASE for each file we need.
+# Keeping the source directory structure (MNI/, downsampled_data/) in the dest.
+FILES=(
+    "MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz"
+    "downsampled_data/${SUBJECT}_acquired_FA25_reorient_crop_downsample_200um.nii.gz"
+    "downsampled_data/${SUBJECT}_synthesized_FLASH25_reorient_crop_downsample_200um.nii.gz"
+    "MNI/Synthesized_FLASH25_in_MNI_v2_500um.nii.gz"
+)
+
+echo "=== MGH ds002179 → S3 ==="
+echo "Subject:   ${SUBJECT}"
+echo "Source:    ${SRC_BASE}"
+echo "Dest:      ${DST_BASE}"
+echo "Work dir:  ${WORK_DIR}"
 echo ""
-echo "Download complete. Files in: ${OUTPUT_DIR}"
-echo "Run 'python pipeline/01_data_acquisition/verify_downloads.py --data-dir data/raw' to verify."
+
+mkdir -p "$WORK_DIR"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+for rel_path in "${FILES[@]}"; do
+    src="${SRC_BASE}/${rel_path}"
+    dst="${DST_BASE}/${rel_path}"
+    local_path="${WORK_DIR}/$(basename "$rel_path")"
+
+    echo "-> ${rel_path}"
+
+    # Two-step (download unsigned from public bucket, upload signed to ours):
+    # server-side copy can't straddle signed/unsigned auth boundaries cleanly.
+    aws s3 cp "$src" "$local_path" \
+        --no-sign-request \
+        --region us-east-1
+
+    aws s3 cp "$local_path" "$dst"
+
+    rm -f "$local_path"
+done
+
+echo ""
+echo "=== MGH download complete ==="
+aws s3 ls --recursive --summarize "${DST_BASE}/" | tail -2
