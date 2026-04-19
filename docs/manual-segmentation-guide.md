@@ -4,16 +4,78 @@ This is the most time-intensive phase of the pipeline and represents the core sc
 
 ## Tool: 3D Slicer
 
-All manual segmentation is done in [3D Slicer](https://www.slicer.org) (free, open-source). Version 5.4+ recommended.
+All manual segmentation is done in [3D Slicer](https://www.slicer.org) (free, open-source). Version 5.4+ recommended; 5.6 is what the Ubuntu instructions below install.
 
-### Setup
+### Install on Ubuntu
 
-1. Download and install 3D Slicer from https://www.slicer.org
-2. Load the MGH 100 um volume (or 200 um downsampled version): `File > Add Data > Choose File(s) to Add`
-3. Optionally load the SynthSeg output as a label overlay to see what has already been segmented
-4. Open the Segment Editor module: `Modules > Segmentation > Segment Editor`
+Slicer isn't in the Ubuntu apt repo. Two options, pick one:
 
-The `slicer_scripts/load_volumes.py` script can automate the loading step from the 3D Slicer Python console.
+**Option A — official tarball (recommended, ~1 GB).** Grab the latest stable from [download.slicer.org](https://download.slicer.org/), extract, run:
+
+```bash
+cd ~/Downloads
+# replace VERSION with whatever's current on download.slicer.org
+wget https://download.slicer.org/bitstream/<hash>/Slicer-5.6.2-linux-amd64.tar.gz
+tar -xzf Slicer-5.6.2-linux-amd64.tar.gz
+mv Slicer-5.6.2-linux-amd64 ~/opt/slicer
+ln -s ~/opt/slicer/Slicer ~/.local/bin/Slicer   # assumes ~/.local/bin is on PATH
+```
+
+**Option B — Flatpak.**
+
+```bash
+flatpak install flathub org.slicer.Slicer
+# runs as: flatpak run org.slicer.Slicer
+```
+
+Option A is preferred because the Neurobotika `pull_from_s3.py` script needs to shell out to the system `aws` CLI, and the Flatpak sandbox makes that awkward (you'd need `--filesystem=home` and matching PATH exports).
+
+Verify install:
+
+```bash
+Slicer --version   # should print 5.6 or later
+```
+
+### First-time launch
+
+1. Launch Slicer. `Welcome > Load DICOM data` dialog pops up — close it; Neurobotika uses NIfTI, not DICOM.
+2. Open **Modules > Segmentation > Segment Editor**. This is where you'll live during Phase 4.
+3. Familiarise with the three slice views (Red = axial, Yellow = sagittal, Green = coronal) and the 3D view.
+
+### Using the Neurobotika workflow
+
+Once Phase 4 fires (you get an SNS email with a task token):
+
+```bash
+# 1. Save the task token from the email
+export NEUROBOTIKA_TASK_TOKEN='eyJ...'       # copy-paste from email
+export NEUROBOTIKA_RUN_ID='run-...'          # same run_id you started
+export AWS_PROFILE=neurobotika
+export AWS_DEFAULT_REGION=eu-central-1
+
+# 2. Launch Slicer with the pull script
+Slicer --python-script ~/MSF/Neurobotika/pipeline/04_manual_refinement/slicer_scripts/pull_from_s3.py
+
+# → Slicer opens with brain + SynthSeg overlay + empty 20-segment node, Segment Editor active.
+```
+
+Full workflow (including export + upload + Step Functions resume) lives in `pipeline/04_manual_refinement/README.md`.
+
+### Background learning — do this before your first segmentation session
+
+You can't make a good CSF mesh without knowing what the structures are. Plan for 3–6 hours of reading + video *before* you start painting. Resources in order of importance:
+
+1. **Slicer UI fluency.** The [3D Slicer YouTube channel's SegmentEditor tutorial](https://www.youtube.com/watch?v=xZwZfgkJ7WM) is the quickest path to competence. Watch it once, then do the [hands-on segmentation tutorial](https://github.com/Slicer/SlicerTraining/tree/main/SegmentationTutorial) (45 min). Paint, Erase, Threshold, Smoothing, Grow-from-seeds, and Scissors are the effects you'll use most.
+2. **Radiopaedia — CSF spaces.** The [CSF spaces overview](https://radiopaedia.org/articles/cerebrospinal-fluid) + the linked articles on individual cisterns is the cleanest introduction. Click through "cisterna magna", "prepontine cistern", "ambient cistern", "quadrigeminal cistern", "interpeduncular cistern", "foramen of Monro", "cerebral aqueduct", "foramen of Magendie", "foramen of Luschka". Each page has example MRI slices.
+3. **Neuroanatomy textbook refresher.** Whichever you have handy. If you don't, [Crossman & Neary's *Neuroanatomy: An Illustrated Colour Text*](https://www.elsevier.com/en-gb/books/neuroanatomy/crossman/978-0-7020-7463-0) (~$50 used) covers ventricles + basal cisterns with the right level of detail. Free alternative: the [e-Anatomy brain atlas at imaios.com](https://www.imaios.com/en/e-anatomy/head-and-neck/brain-mri-3d) — interactive 3D, click to label structures. 1-week trial, then paid; the free mode still lets you browse labeled MRIs.
+4. **Ventricular system animation.** [Ninja Nerd's "Ventricular System" lecture on YouTube](https://www.youtube.com/watch?v=iM9uvb6X_QE) is 45 min and covers the CSF flow pathway (lateral → Monro → third → aqueduct → fourth → Magendie/Luschka → cisterns → SAS → arachnoid granulations) with clear diagrams. Watch this before doing the foramina.
+5. **Cisterns deep-dive.** [Rhoton's Cranial Anatomy atlas chapter on cisterns](https://academic.oup.com/neurosurgery/article/51/suppl_4/S1/2749583) is dense but authoritative — skim for the spatial relationships between each cistern and the neighbouring vessels/nerves (landmarks help you find cistern boundaries when the MRI signal is ambiguous).
+6. **MRI contrast intuition.** CSF is bright on T2, dark on T1. The MGH ds002179 volume is a *synthetic* FLASH25 (T1-weighted) — CSF appears dark. If it helps, toggle the overlay colour in Slicer or invert the window/level. [This Radiopaedia MRI physics primer](https://radiopaedia.org/articles/mri-1) is a 10-min read.
+7. **Segmentation-specific tips.** [The 3D Slicer segmentation recipe wiki](https://slicer.readthedocs.io/en/latest/user_guide/image_segmentation.html) has concrete recipes for common tasks — e.g. "thin tubular structure" (applies to the cerebral aqueduct), "threshold + paint correction" (the approach for most cisterns).
+
+Don't skip **#1 and #2** even if you're short on time. Everything else is build-your-intuition material you can layer on top.
+
+The `slicer_scripts/load_volumes.py` script (legacy, local-only) or `slicer_scripts/pull_from_s3.py` (cloud-integrated) can automate the loading step.
 
 ## Label Map Convention
 
