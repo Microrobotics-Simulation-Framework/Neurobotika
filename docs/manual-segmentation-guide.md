@@ -10,16 +10,40 @@ All manual segmentation is done in [3D Slicer](https://www.slicer.org) (free, op
 
 Slicer isn't in the Ubuntu apt repo. Two options, pick one:
 
-**Option A — official tarball (recommended, ~1 GB).** Grab the latest stable from [download.slicer.org](https://download.slicer.org/), extract, run:
+**Option A — official tarball (recommended, ~1 GB).** Grab the latest stable from [download.slicer.org](https://download.slicer.org/), extract, and link the *executable file* (not the directory!) onto PATH:
 
 ```bash
 cd ~/Downloads
-# replace VERSION with whatever's current on download.slicer.org
-wget https://download.slicer.org/bitstream/<hash>/Slicer-5.6.2-linux-amd64.tar.gz
-tar -xzf Slicer-5.6.2-linux-amd64.tar.gz
-mv Slicer-5.6.2-linux-amd64 ~/opt/slicer
-ln -s ~/opt/slicer/Slicer ~/.local/bin/Slicer   # assumes ~/.local/bin is on PATH
+
+# 1. Download. Either browse download.slicer.org and copy the signed URL,
+#    or script it from the redirect endpoint:
+wget -c "$(curl -sL 'https://download.slicer.org/bitstream?os=linux&stability=release' \
+  | grep -oE 'https://[^\"]+\.tar\.gz' | head -1)"
+
+# 2. Extract into ~/opt/slicer. The tarball lays out as:
+#    ~/opt/slicer/Slicer          <- the executable
+#    ~/opt/slicer/bin/, lib/, share/, etc.
+mkdir -p ~/opt
+tar -xzf Slicer-5.*-linux-amd64.tar.gz -C ~/opt/
+# The extracted directory is versioned; rename to `slicer` for convenience:
+mv ~/opt/Slicer-5.*-linux-amd64 ~/opt/slicer
+
+# 3. Verify the executable exists before symlinking:
+test -x ~/opt/slicer/Slicer && echo "OK: found ~/opt/slicer/Slicer"
+
+# 4. Link the executable (the file, not the directory). The quotes and the
+#    explicit path make sure tab-completion doesn't resolve to share/ or bin/.
+mkdir -p ~/.local/bin
+ln -sf "$HOME/opt/slicer/Slicer" "$HOME/.local/bin/Slicer"
+
+# 5. Verify
+readlink -f ~/.local/bin/Slicer        # should end in .../opt/slicer/Slicer
+Slicer --version                       # should print 5.x
 ```
+
+If `Slicer --version` prints nothing or "command not found", check:
+- `readlink -f ~/.local/bin/Slicer` — target must be the file `~/opt/slicer/Slicer`, NOT a directory like `~/opt/slicer/share/` or `~/opt/slicer/bin/`. If it's a directory, redo step 4.
+- `echo "$PATH" | tr ':' '\n' | grep local/bin` — `~/.local/bin` must be on PATH. If not, add it via `~/.bashrc`.
 
 **Option B — Flatpak.**
 
