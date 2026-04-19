@@ -1,5 +1,33 @@
 # Phase 2: Brain Segmentation
 
+> **STATUS:** Phase 2 is currently wired to use **SuperSynth** (FS 8.2 `mri_super_synth`). Both SynthSeg and SuperSynth have been benchmarked against the MGH ex-vivo brain. See the **Tool comparison** section below — SynthSeg is still the better choice *today* for Neurobotika's specific goal because SuperSynth omits label 24 (extraventricular CSF). Keep this in mind when reviewing outputs.
+
+## Tool comparison — SynthSeg vs SuperSynth (2026-04-19)
+
+Both tools were run on MGH ds002179 sub-EXC004's 200 μm MNI volume under identical Batch infrastructure. Runs preserved at `runs/run-2026-04-18-125403/seg/brain/` (SynthSeg) and `runs/run-2026-04-19-supersynth/seg/brain/` (SuperSynth).
+
+| Aspect | SynthSeg (FS 7.4.1, `mri_synthseg`) | SuperSynth (FS 8.2, `mri_super_synth`) |
+|---|---|---|
+| Ex-vivo native mode | no (`--robust` hack) | **yes** (`--mode exvivo`) |
+| Super-resolution synths (T1w/T2w/FLAIR) | no | **yes** |
+| MNI registration | no | **yes** (saves Phase 5 work) |
+| Cortical parcellation | **108 labels** (via `--parc`) | aseg only |
+| Extraventricular CSF (label 24) | **~185 mL present** | **absent — label 24 is not produced** |
+| QC Dice scores | no | **yes** |
+| Output format | `seg.nii.gz` | `segmentation.mgz` + synth maps |
+| Runtime on 200 μm (g5.xlarge) | ~8 min (with 1 mm downsample) | ~12 min (with 1 mm downsample) |
+| Image size | 9.88 GB | 14.3 GB |
+
+### Why SynthSeg still wins for Neurobotika today
+
+SuperSynth looks better on paper but **does not emit label 24 (extraventricular CSF)** in its segmentation volume. This is a core structure for Neurobotika — the subarachnoid space is a large fraction of the CSF mesh. In the SynthSeg baseline for sub-EXC004 it was ~185 mL; in SuperSynth it's 0 mL (the label simply isn't there).
+
+The `run_brainseg.py` wrapper recomputes volumes from the segmentation NIfTI to work around the FS 8.2 CSV bug the user flagged (label 24 missing from `volumes.csv`), but the fix doesn't help when the NIfTI itself is missing label 24.
+
+**Recommendation:** until SuperSynth produces label 24 (upstream fix or alternative derivation), use SynthSeg for Neurobotika. The two wrapper scripts are drop-in replacements (both write `volumes.csv` + segmentation to an `output-dir`) — swapping is a one-line change in `brain.Dockerfile` (base image + `mri_synthseg` vs `mri_super_synth` in the wrapper).
+
+
+
 Automated brain segmentation using FreeSurfer's `mri_synthseg` (a contrast-agnostic deep-learning model for whole-brain aseg). The wrapper downsamples the input to 1 mm isotropic first — SynthSeg's training regime — before inference. This keeps memory reasonable and matches the model's expectations.
 
 Output is written as a directory to match the shape of the upcoming migration to **SuperSynth** (`mri_super_synth`), which emits a directory of segmentation + synthetic T1w/T2w + MNI affine + QC. SuperSynth is the cleaner long-term answer for our ex-vivo data but isn't yet shipped in the `freesurfer/freesurfer:7.4.1` Docker image; swapping to it later will be a one-binary change.
