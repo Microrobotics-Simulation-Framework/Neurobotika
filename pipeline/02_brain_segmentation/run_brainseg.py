@@ -1,27 +1,38 @@
 #!/usr/bin/env python3
-"""Run SuperSynth brain segmentation (``mri_super_synth`` via FreeSurfer 8.2).
+"""Run brain segmentation via FreeSurfer 8.2's SynthSeg or SuperSynth.
 
-SuperSynth is a multi-task U-Net that performs:
-  - aseg-style segmentation (cortical + subcortical + extracerebral + limbic)
-  - MNI affine registration
-  - super-resolution (1 mm isotropic T1w / T2w / FLAIR synths)
-  - QC (per-structure Dice)
+Two tools are available; ``--tool`` selects which:
 
-The ``--mode exvivo`` regime matches MGH ds002179 (post-mortem 7 T)
-natively, so no downsampling preprocessing is needed — SuperSynth
-internally resamples inputs of any resolution.
+- ``synthseg`` (default): ``mri_synthseg --parc --robust`` — aseg + cortical
+  parcellation (108 labels). Produces label 24 (extraventricular CSF)
+  correctly, which SuperSynth omits. This is the right choice for
+  Neurobotika's CSF-mesh goal.
+- ``supersynth``: ``mri_super_synth --mode exvivo`` — aseg + limbic +
+  extracerebral structures plus MNI registration and 1 mm synthetic
+  T1w / T2w / FLAIR volumes. Currently omits label 24 (confirmed on
+  both MGH ex-vivo and Lüsebrink in-vivo data); kept as an option for
+  future work where its extras outweigh that gap.
 
-Known upstream bug (FS 8.2): label 24 (extraventricular CSF) is not
-written correctly to the volumes CSV. As a work-around this wrapper
-*always* recomputes per-label volumes from ``seg.nii.gz`` itself after
-SuperSynth runs, and writes a trusted ``volumes.csv`` that downstream
-phases can use. SuperSynth's original CSV is preserved alongside as
-``volumes_supersynth.csv`` for audit.
+Input pre-processing:
+- Inputs higher-resolution than 1 mm are downsampled to 1 mm isotropic
+  before invocation — both tools are trained at 1 mm, and this keeps
+  the container's RAM footprint reasonable on g5.xlarge (16 GB).
+
+Output:
+- ``<output-dir>/seg.nii.gz`` (SynthSeg) or ``segmentation.mgz``
+  (SuperSynth) — the segmentation volume.
+- ``<output-dir>/volumes.csv`` — trusted per-label volumes recomputed
+  from the segmentation NIfTI directly (works around FS 8.2's label-24
+  CSV bug when SuperSynth is used, and gives a consistent schema for
+  both tools).
+- SuperSynth additionally emits SynthT1/T2/FLAIR.mgz + MNI + QC; those
+  are uploaded alongside when present.
 
 Accepts local paths or ``s3://`` URIs for --input and --output-dir.
 """
 
 import csv
+import os
 import shutil
 import subprocess
 import tempfile
@@ -32,14 +43,16 @@ from urllib.parse import urlparse
 import click
 
 
-def _downsample_if_needed(src: Path, dst: Path, max_voxels: int = 100_000_000) -> Path:
-    """If the NIfTI has more than `max_voxels` voxels (default 1e8, i.e.
-    ~400 MB float32 in RAM), downsample to 1 mm isotropic so SuperSynth's
-    container doesn't OOM just loading the input. SuperSynth does its
-    own internal resample to 1 mm anyway, so this is purely a memory
-    relief valve.
+def _downsample_if_needed(src: Path, dst: Path, min_voxel_mm: float = 0.95) -> Path:
+    """Downsample to 1 mm isotropic if any input voxel is < min_voxel_mm.
 
-    Returns the path actually used (either `src` if small enough, or
+    Both SynthSeg and SuperSynth are trained at 1 mm. Passing higher-res
+    inputs (e.g. Lüsebrink 450 µm or MGH 200 µm) burns RAM holding the
+    full volume before internal resample, and for SynthSeg specifically
+    the accuracy regresses when inputs depart from the training regime.
+    Shrinking to 1 mm first is defensively correct for both tools.
+
+    Returns the path actually used (either `src` if already ≥ 1 mm, or
     `dst` after resampling).
     """
     import nibabel as nib
@@ -52,12 +65,12 @@ def _downsample_if_needed(src: Path, dst: Path, max_voxels: int = 100_000_000) -
     voxel = np.asarray(img.header.get_zooms()[:3], dtype=np.float64)
     print(f"  Input shape: {shape}, voxel size: {voxel.tolist()} mm, {total:,} voxels")
 
-    if total <= max_voxels:
-        print("  Input small enough; skipping preprocess downsample")
+    if np.all(voxel >= min_voxel_mm):
+        print(f"  Input already ≥ {min_voxel_mm} mm per axis; skipping preprocess downsample")
         return src
 
     target = np.array([1.0, 1.0, 1.0])
-    zoom_factors = voxel / target  # e.g. 0.2 -> 0.2 (shrink x5)
+    zoom_factors = voxel / target  # e.g. 0.45 -> 0.45 (shrink ~2.2x)
     data = img.get_fdata(dtype=np.float32)
     print(f"  Downsampling to 1 mm isotropic (zoom factors {zoom_factors.tolist()})")
     resampled = zoom(data, zoom_factors, order=1, mode="nearest", prefilter=False)
@@ -204,33 +217,50 @@ def _recompute_volumes(seg_path: Path, output_csv: Path) -> None:
               help="Input NIfTI file (local path or s3://)")
 @click.option("--output-dir", "output_dir", required=True,
               help="Output directory (local path or s3:// prefix)")
+@click.option("--tool",
+              type=click.Choice(["synthseg", "supersynth"]),
+              default="synthseg",
+              help="Segmentation tool. synthseg (default) produces label 24 "
+                   "(extraventricular CSF); supersynth omits it but adds "
+                   "limbic + extracerebral + MNI + synthetic T1/T2/FLAIR.")
 @click.option("--mode",
               type=click.Choice(["invivo", "exvivo", "cerebrum",
                                  "left-hemi", "right-hemi"]),
               default="exvivo",
-              help="Scan regime (default: exvivo — matches MGH ds002179)")
+              help="SuperSynth scan regime (ignored for synthseg).")
 @click.option("--device", type=click.Choice(["cuda", "cpu"]), default="cuda",
-              help="Compute device")
+              help="Compute device.")
 @click.option("--sharpen-synths", is_flag=True, default=False,
-              help="Sharpen SuperSynth's T1w/T2w/FLAIR synthetic maps")
-@click.option("--threads", type=int, default=-1,
-              help="CPU thread count (-1 = all cores)")
-def main(input_path: str, output_dir: str, mode: str, device: str,
-         sharpen_synths: bool, threads: int) -> None:
-    """Run ``mri_super_synth`` on a brain MRI volume and land a trusted
+              help="SuperSynth: sharpen synthetic T1/T2/FLAIR maps (ignored for synthseg).")
+@click.option("--parc/--no-parc", default=True,
+              help="SynthSeg: include cortical parcellation (108 labels). Ignored for supersynth.")
+@click.option("--robust/--no-robust", default=True,
+              help="SynthSeg: robust mode (contrast-agnostic). Ignored for supersynth.")
+@click.option("--threads", type=int, default=4,
+              help="CPU thread count (must be ≥ 1; mri_synthseg's TF threadpool rejects -1).")
+def main(input_path: str, output_dir: str, tool: str, mode: str,
+         device: str, sharpen_synths: bool, parc: bool, robust: bool,
+         threads: int) -> None:
+    """Run SynthSeg or SuperSynth on a brain MRI volume and land a trusted
     volumes CSV alongside the segmentation."""
-    print(f"Running SuperSynth on: {input_path}")
+    print(f"Running {tool} on: {input_path}")
     print(f"  Output dir: {output_dir}")
-    print(f"  Mode: {mode}, Device: {device}, Sharpen: {sharpen_synths}")
+    print(f"  Device: {device}, Threads: {threads}")
 
-    binary = shutil.which("mri_super_synth")
+    if tool == "synthseg":
+        binary = shutil.which("mri_synthseg")
+        binary_name = "mri_synthseg"
+    else:
+        binary = shutil.which("mri_super_synth")
+        binary_name = "mri_super_synth"
+
     if binary is None:
         raise click.ClickException(
-            "mri_super_synth not on PATH. The container should be built from "
+            f"{binary_name} not on PATH. The container should be built from "
             "docker/brain.Dockerfile (FROM freesurfer/freesurfer:8.2.0)."
         )
 
-    with tempfile.TemporaryDirectory(prefix="supersynth_") as td:
+    with tempfile.TemporaryDirectory(prefix=f"{tool}_") as td:
         tmp = Path(td)
         tmp_in = tmp / "input.nii.gz"
         tmp_out = tmp / "output"
@@ -243,26 +273,64 @@ def main(input_path: str, output_dir: str, mode: str, device: str,
         else:
             raw_in = Path(input_path)
 
-        # SuperSynth loads the full volume into RAM before its own internal
-        # resample. For high-res MGH inputs (200 μm ≈ 4-5 GB uncompressed)
-        # that pushes past 15 GB container memory on g5.xlarge. Downsample
-        # to 1 mm first if the input is big. SuperSynth normalises
-        # resolution internally so accuracy is unchanged.
+        # Both SynthSeg and SuperSynth load the full volume into RAM
+        # before internal resampling. For high-res MGH / Lüsebrink inputs
+        # that pushes past 15 GB container memory on g5.xlarge.
+        # Downsample to 1 mm first when needed — both tools are trained
+        # at 1 mm so accuracy is unchanged.
         local_in = _downsample_if_needed(raw_in, tmp / "input_1mm.nii.gz")
 
-        cmd = [
-            binary,
-            "--i", str(local_in),
-            "--o", str(tmp_out),
-            "--mode", mode,
-            "--device", device,
-            "--threads", str(threads),
-        ]
-        if sharpen_synths:
-            cmd.append("--sharpen_synths")
+        if tool == "synthseg":
+            # mri_synthseg writes a single seg file + optional volumes CSV.
+            # Place them inside tmp_out so the directory upload contract works.
+            #
+            # SynthSeg always runs on CPU here. The brain image also ships a
+            # CUDA-12.1 PyTorch (required by SuperSynth) which conflicts with
+            # FreeSurfer's bundled TensorFlow — attempting GPU-mode SynthSeg
+            # throws std::bad_alloc deep in TF. On a 1 mm downsampled input
+            # (~6 M voxels) CPU inference finishes in 3–5 min on c6i/g5,
+            # which is well inside the job timeout.
+            seg_file = tmp_out / "seg.nii.gz"
+            synthseg_vol = tmp_out / "volumes_synthseg.csv"
+            cmd = [
+                binary,
+                "--i", str(local_in),
+                "--o", str(seg_file),
+                "--vol", str(synthseg_vol),
+                "--threads", str(threads),
+                "--cpu",
+            ]
+            if parc:
+                cmd.append("--parc")
+            if robust:
+                cmd.append("--robust")
+        else:
+            # mri_super_synth writes an entire output directory.
+            cmd = [
+                binary,
+                "--i", str(local_in),
+                "--o", str(tmp_out),
+                "--mode", mode,
+                "--device", device,
+                "--threads", str(threads),
+            ]
+            if sharpen_synths:
+                cmd.append("--sharpen_synths")
+
+        # Build subprocess env. For SynthSeg we force TensorFlow off any
+        # GPU entirely: the brain image ships a CUDA PyTorch for
+        # SuperSynth, and TF's initialisation probe + implicit memory
+        # allocation on the same GPU throws std::bad_alloc. The --cpu
+        # flag alone isn't enough — TF still initialises GPU support
+        # during import. CUDA_VISIBLE_DEVICES="" hides all GPUs from TF.
+        env = os.environ.copy()
+        if tool == "synthseg":
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            # Cap TF's thread-pool memory growth too.
+            env["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
         print(f"  Invoking: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, env=env, check=True)
 
         # Post-processing: preserve SuperSynth's own CSV (if any) for audit,
         # then recompute a trusted volumes.csv from the segmentation NIfTI.

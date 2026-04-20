@@ -441,13 +441,16 @@ locals {
     brain-seg = {
       name      = "${var.project_name}-brain-seg"
       image_key = "brain"
-      vcpus     = 4
-      # 15000 MB is fine on g5/g6 (16 GB system RAM); SuperSynth's heavy
-      # allocations go into GPU VRAM (24 GB on both A10G and L4).
-      memory = 15000
-      gpu    = 1
-      queue  = "gpu"
-      # python3 (not python) because the FreeSurfer base only exposes python3.
+      # SynthSeg (default) runs CPU-only (TF ↔ CUDA PyTorch in-container
+      # fight means GPU mode reliably std::bad_alloc-s on g5.xlarge).
+      # c6i.4xlarge on the CPU queue gives 16 vCPU + 32 GB RAM which is
+      # plenty for `mri_synthseg --parc --robust` on a 1 mm input.
+      # SuperSynth needs GPU; run it ad-hoc via `aws batch submit-job`
+      # against a bespoke job def if needed.
+      vcpus   = 16
+      memory  = 30000
+      gpu     = 0
+      queue   = "cpu"
       command = ["python3", "/app/02/run_brainseg.py", "--input", "Ref::input", "--output-dir", "Ref::output_dir"]
     }
     spine-seg = {

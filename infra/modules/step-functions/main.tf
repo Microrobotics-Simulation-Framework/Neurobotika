@@ -373,8 +373,10 @@ resource "aws_sfn_state_machine" "pipeline" {
                 Type     = "Task"
                 Resource = "arn:aws:states:::batch:submitJob.sync"
                 Parameters = {
-                  JobName       = "phase2-brain-seg"
-                  JobQueue      = var.gpu_job_queue_arn
+                  JobName = "phase2-brain-seg"
+                  # CPU queue — SynthSeg runs CPU-only (see brain-seg job
+                  # def comment in modules/batch/main.tf for why).
+                  JobQueue      = var.cpu_job_queue_arn
                   JobDefinition = lookup(var.job_definition_arns, "brain-seg", "")
                   Parameters = {
                     "input.$"      = "$.brain_input"
