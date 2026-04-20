@@ -350,6 +350,11 @@ locals {
 
   job_definitions = {
     # Primary brain reference (default Phase 1 download branch).
+    # NOTE: only keep parameters here that have NON-EMPTY defaults. AWS
+    # Batch normalises empty-string defaults to null, which then shows up
+    # as drift on every terraform apply and bumps the job def revision —
+    # which in turn invalidates the state machine's ARN reference. Caller
+    # (the state machine) always supplies s3_dest at submit-job time.
     download-lusebrink = {
       name      = "${var.project_name}-download-lusebrink"
       image_key = "download"
@@ -365,7 +370,6 @@ locals {
       ]
       parameters = {
         subject = "sub-yv98"
-        s3_dest = ""
       }
     }
     # MGH kept as an ad-hoc job definition (not wired into default state
@@ -386,7 +390,6 @@ locals {
       ]
       parameters = {
         subject = "sub-EXC004"
-        s3_dest = ""
       }
     }
     download-spine = {
@@ -404,7 +407,6 @@ locals {
       ]
       parameters = {
         subject = "sub-douglas"
-        s3_dest = ""
       }
     }
     download-lumbosacral = {
@@ -419,9 +421,7 @@ locals {
         "--dataset", "lumbosacral",
         "--s3-dest", "Ref::s3_dest",
       ]
-      parameters = {
-        s3_dest = ""
-      }
+      parameters = {}
     }
     verify-downloads = {
       name      = "${var.project_name}-verify-downloads"
@@ -436,10 +436,7 @@ locals {
         "--manifest-out", "Ref::manifest_out",
         "--verbose",
       ]
-      parameters = {
-        s3_prefix    = ""
-        manifest_out = ""
-      }
+      parameters = {}
     }
     brain-seg = {
       name      = "${var.project_name}-brain-seg"
