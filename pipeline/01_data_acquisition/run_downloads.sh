@@ -24,14 +24,25 @@ while [[ $# -gt 0 ]]; do
         --s3-dest) S3_DEST="$2"; shift 2 ;;
         -h|--help)
             cat <<EOF
-Usage: $0 --dataset {mgh|spine|lumbosacral} [--subject SUB] --s3-dest s3://bucket/prefix
+Usage: $0 --dataset {lusebrink|spine|lumbosacral|mgh} [--subject SUB] --s3-dest s3://bucket/prefix
 
 Runs the dataset-specific download script and uploads the result to S3.
 
+Primary (default pipeline) datasets:
+  lusebrink:   Lüsebrink 2021 450 µm T2 SPACE — default brain reference
+  spine:       spine-generic single-subject T2w
+  lumbosacral: SpineNerveModelGenerator repo
+
+Optional (ad-hoc, not in default Phase 1):
+  mgh:         MGH ds002179 ex-vivo 200 µm — kept for future cortical-
+               ribbon work; not a default because ex-vivo fixation
+               collapses the subarachnoid CSF compartment.
+
 --subject defaults per dataset:
-  mgh:          sub-EXC004
+  lusebrink:    sub-yv98
   spine:        sub-douglas
   lumbosacral:  (ignored)
+  mgh:          sub-EXC004
 EOF
             exit 0
             ;;
@@ -50,6 +61,10 @@ SUBJECT_ARGS=()
 [ -n "$SUBJECT" ] && SUBJECT_ARGS=(--subject "$SUBJECT")
 
 case "$DATASET" in
+    lusebrink)
+        bash "$SCRIPT_DIR/download_lusebrink_2021.sh" \
+            "${SUBJECT_ARGS[@]}" --s3-dest "$S3_DEST"
+        ;;
     mgh)
         bash "$SCRIPT_DIR/download_mgh_100um.sh" \
             "${SUBJECT_ARGS[@]}" --s3-dest "$S3_DEST"
@@ -63,7 +78,7 @@ case "$DATASET" in
             --s3-dest "$S3_DEST"
         ;;
     *)
-        echo "Error: unknown --dataset '$DATASET' (use mgh, spine, or lumbosacral)" >&2
+        echo "Error: unknown --dataset '$DATASET' (use lusebrink, spine, lumbosacral, or mgh)" >&2
         exit 1
         ;;
 esac

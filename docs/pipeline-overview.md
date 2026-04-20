@@ -158,7 +158,7 @@ aws stepfunctions start-execution \
   --name "run-$(date -u +%Y-%m-%d-%H%M%S)" \
   --input '{
     "run_id":           "run-001",
-    "brain_subject":    "sub-EXC004",
+    "brain_subject":    "sub-yv98",
     "spine_subject":    "sub-douglas",
     "run_training":     false,
     "stop_after_phase": 1

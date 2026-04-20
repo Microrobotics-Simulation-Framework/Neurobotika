@@ -32,7 +32,7 @@ aws stepfunctions start-execution \
   --name "run-$(date -u +%Y-%m-%d-%H%M%S)" \
   --input '{
     "run_id":           "run-001",
-    "brain_subject":    "sub-EXC004",
+    "brain_subject":    "sub-yv98",
     "spine_subject":    "sub-douglas",
     "run_training":     false,
     "stop_after_phase": 1
@@ -47,8 +47,8 @@ Individual scripts remain runnable locally. Most accept `--help`:
 
 ```bash
 bash pipeline/01_data_acquisition/run_downloads.sh \
-  --dataset mgh --subject sub-EXC004 \
-  --s3-dest s3://neurobotika-data/runs/dev-001/raw/mgh_100um
+  --dataset lusebrink --subject sub-yv98 \
+  --s3-dest s3://neurobotika-data/runs/dev-001/raw/lusebrink_2021
 
 python pipeline/02_brain_segmentation/run_brainseg.py --help
 ```
@@ -62,9 +62,11 @@ A cloud execution with `run_id=run-001` produces:
 ```
 s3://neurobotika-data/runs/run-001/
 ├── raw/                         # Phase 1 output
-│   ├── mgh_100um/<brain_subject>/
-│   │   ├── MNI/            Synthesized_FLASH25_in_MNI_v2_{200,500}um.nii.gz
-│   │   └── downsampled_data/   acquired_FA25_…_200um.nii.gz  + synthesized_FLASH25_…_200um.nii.gz
+│   ├── lusebrink_2021/<brain_subject>/anat/
+│   │   ├── <brain_subject>_T1w.nii.gz                  (+ .json)
+│   │   ├── <brain_subject>_T1w_biasCorrected.nii.gz
+│   │   ├── <brain_subject>_T2w.nii.gz                  (+ .json)
+│   │   └── <brain_subject>_T2w_biasCorrected.nii.gz    # brain_input default
 │   ├── spine_generic/<spine_subject>/
 │   │   ├── <spine_subject>/    T1w/T2w/T2star/DWI
 │   │   └── derivatives/labels/<spine_subject>/

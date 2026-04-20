@@ -349,6 +349,28 @@ locals {
   ] : []
 
   job_definitions = {
+    # Primary brain reference (default Phase 1 download branch).
+    download-lusebrink = {
+      name      = "${var.project_name}-download-lusebrink"
+      image_key = "download"
+      vcpus     = 4
+      memory    = 4096
+      gpu       = 0
+      queue     = "cpu"
+      command = [
+        "bash", "/app/01/run_downloads.sh",
+        "--dataset", "lusebrink",
+        "--subject", "Ref::subject",
+        "--s3-dest", "Ref::s3_dest",
+      ]
+      parameters = {
+        subject = "sub-yv98"
+        s3_dest = ""
+      }
+    }
+    # MGH kept as an ad-hoc job definition (not wired into default state
+    # machine Phase 1) for future cortical-ribbon / OCT validation work.
+    # Submit directly via `aws batch submit-job` with a separate run_id.
     download-mgh = {
       name      = "${var.project_name}-download-mgh"
       image_key = "download"

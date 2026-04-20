@@ -22,14 +22,17 @@ class TestExpectedDatasetsConfig:
         assert EXPECTED_DATASETS["lumbosacral"]["min_files"] == 0
 
     def test_required_datasets(self):
-        assert EXPECTED_DATASETS["mgh_100um"]["min_files"] >= 1
+        # Primary brain dataset is now Lüsebrink 2021 in vivo — see ADR-001.
+        # MGH is retained but demoted to optional (min_files=0).
+        assert EXPECTED_DATASETS["lusebrink_2021"]["min_files"] >= 1
         assert EXPECTED_DATASETS["spine_generic"]["min_files"] >= 1
 
-    def test_has_three_datasets(self):
-        assert len(EXPECTED_DATASETS) == 3
-        assert "mgh_100um" in EXPECTED_DATASETS
-        assert "spine_generic" in EXPECTED_DATASETS
-        assert "lumbosacral" in EXPECTED_DATASETS
+    def test_has_four_datasets(self):
+        assert len(EXPECTED_DATASETS) == 4
+        assert "lusebrink_2021" in EXPECTED_DATASETS     # primary brain
+        assert "spine_generic" in EXPECTED_DATASETS      # primary spine
+        assert "lumbosacral" in EXPECTED_DATASETS        # optional
+        assert "mgh_100um" in EXPECTED_DATASETS          # optional, ad-hoc
 
 
 class TestVerifyDownloadsCli:

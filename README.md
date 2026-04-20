@@ -50,14 +50,14 @@ aws stepfunctions start-execution \
   --name "run-$(date -u +%Y-%m-%d-%H%M%S)" \
   --input '{
     "run_id":           "run-001",
-    "brain_subject":    "sub-EXC004",
+    "brain_subject":    "sub-yv98",
     "spine_subject":    "sub-douglas",
     "run_training":     false,
     "stop_after_phase": 99
   }'
 ```
 
-Phase 1 downloads ~3.4 GB to S3. The state machine is idempotent: rerun with the same `run_id` and completed phases are skipped. `stop_after_phase` (optional, default 99) aborts cleanly after phase N.
+Phase 1 downloads ~465 MB to S3 (Lüsebrink 450 µm brain + spine-generic + lumbosacral repo). The state machine is idempotent: rerun with the same `run_id` and completed phases are skipped. `stop_after_phase` (optional, default 99) aborts cleanly after phase N.
 
 ### Local
 

@@ -1,6 +1,6 @@
 # Phase 2: Brain Segmentation
 
-> **STATUS:** Phase 2 is currently wired to use **SuperSynth** (FS 8.2 `mri_super_synth`). Both SynthSeg and SuperSynth have been benchmarked against the MGH ex-vivo brain. See the **Tool comparison** section below — SynthSeg is still the better choice *today* for Neurobotika's specific goal because SuperSynth omits label 24 (extraventricular CSF). Keep this in mind when reviewing outputs.
+> **STATUS:** Phase 2 is wired to use `mri_synthseg` by default (FS 7.4.1) on the **Lüsebrink 2021 450 µm T2 SPACE** (bias-corrected). Input path: `raw/lusebrink_2021/<brain_subject>/anat/<brain_subject>_T2w_biasCorrected.nii.gz`. The legacy MGH path and the SuperSynth (FS 8.2) branch are still in the repo history but are no longer in the default Phase 1 flow — see [docs/decisions.md ADR-001](../../docs/decisions.md). The SuperSynth vs SynthSeg comparison below was run on MGH data and remains informative but not directly relevant to the current default pipeline.
 
 ## Tool comparison — SynthSeg vs SuperSynth (2026-04-19)
 

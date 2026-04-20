@@ -46,8 +46,8 @@ from pathlib import Path
 # Config from env (with sensible defaults for local quick-start)
 # ---------------------------------------------------------------------------
 
-RUN_ID         = os.environ.get("NEUROBOTIKA_RUN_ID",         "run-2026-04-18-125403")
-BRAIN_SUBJECT  = os.environ.get("NEUROBOTIKA_BRAIN_SUBJECT",  "sub-EXC004")
+RUN_ID         = os.environ.get("NEUROBOTIKA_RUN_ID",         "run-example")
+BRAIN_SUBJECT  = os.environ.get("NEUROBOTIKA_BRAIN_SUBJECT",  "sub-yv98")        # Lüsebrink 2021
 SPINE_SUBJECT  = os.environ.get("NEUROBOTIKA_SPINE_SUBJECT",  "sub-douglas")
 BUCKET         = os.environ.get("NEUROBOTIKA_BUCKET",         "neurobotika-data")
 LOCAL_DIR      = Path(os.environ.get("NEUROBOTIKA_LOCAL_DIR", str(Path.home() / "neurobotika-slicer")))
@@ -57,10 +57,13 @@ S3_RUN = f"s3://{BUCKET}/runs/{RUN_ID}"
 # Each entry is (s3 sub-path relative to S3_RUN, local filename).
 # Only volumes — small JSON/CSV metadata is skipped to keep startup fast.
 FILES_TO_FETCH = [
-    # Brain raw volume (200 µm MNI): background image in Slicer
-    (f"raw/mgh_100um/{BRAIN_SUBJECT}/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz",
-     "brain_200um.nii.gz"),
-    # Brain segmentation (SynthSeg output)
+    # Brain raw T2 SPACE (450 µm, bright-CSF): background image in Slicer
+    (f"raw/lusebrink_2021/{BRAIN_SUBJECT}/anat/{BRAIN_SUBJECT}_T2w.nii.gz",
+     "brain_T2w.nii.gz"),
+    # Brain raw T1w (co-registered reference)
+    (f"raw/lusebrink_2021/{BRAIN_SUBJECT}/anat/{BRAIN_SUBJECT}_T1w.nii.gz",
+     "brain_T1w.nii.gz"),
+    # Brain segmentation (SynthSeg output on the bias-corrected T2w)
     (f"seg/brain/{BRAIN_SUBJECT}/seg.nii.gz",            "brain_seg.nii.gz"),
     # Spine T2w raw volume (secondary context)
     (f"raw/spine_generic/{SPINE_SUBJECT}/{SPINE_SUBJECT}/anat/{SPINE_SUBJECT}_T2w.nii.gz",
@@ -148,11 +151,16 @@ def setup_slicer_workspace(files: dict):
     # ---- Load background image(s) --------------------------------------------------
 
     brain_node = None
-    if "brain_200um.nii.gz" in files:
-        print("Loading brain volume...")
-        brain_node = slicer.util.loadVolume(files["brain_200um.nii.gz"])
+    if "brain_T2w.nii.gz" in files:
+        print("Loading brain T2 SPACE (bright CSF)...")
+        brain_node = slicer.util.loadVolume(files["brain_T2w.nii.gz"])
         if brain_node is None:
-            print("  WARN: brain volume failed to load")
+            print("  WARN: brain T2w volume failed to load")
+
+    # T1w as a secondary reference (useful for cortical/nuclear anatomy)
+    if "brain_T1w.nii.gz" in files:
+        print("Loading brain T1w (co-registered reference)...")
+        slicer.util.loadVolume(files["brain_T1w.nii.gz"])
 
     # Phase 2 seg as a label overlay (so the user knows what's already segmented)
     brain_label_node = None
@@ -218,9 +226,9 @@ def setup_slicer_workspace(files: dict):
     print(f"  Brain subject: {BRAIN_SUBJECT} | Spine subject: {SPINE_SUBJECT}")
     print(f"  Local staging dir: {LOCAL_DIR}")
     print("")
-    print("  Background   : MGH 200 µm brain volume")
+    print("  Background   : Lüsebrink 450 µm T2 SPACE (CSF bright)")
     print("  Label overlay: Phase 2 SynthSeg output (30 % opacity)")
-    print("  Other loaded : spine_cord, spine_canal, spine_multilabel, spine_T2w")
+    print("  Other loaded : brain_T1w, spine_cord, spine_canal, spine_multilabel, spine_T2w")
     print(f"  Segmentation : {seg_node.GetName()}  (20 empty segments pre-configured)")
     print("")
     print("  NEXT:")

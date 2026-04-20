@@ -2,26 +2,43 @@
 
 All primary datasets are freely downloadable with no institutional affiliation required. Large datasets should be cached in S3 after initial download rather than stored in the git repository.
 
+The **primary brain reference is Lüsebrink 2021 (in-vivo 450 µm T2 SPACE)**, *not* MGH ds002179. MGH is retained as an optional dataset for future cortical-ribbon work — see [ADR-001 in decisions.md](decisions.md) for the rationale.
+
 ## Primary Datasets
 
-### MGH 100 um Ex Vivo Brain (Edlow et al., 2019)
+### Lüsebrink 2021 — In-vivo 450 µm T2 SPACE (default brain reference)
 
-The highest resolution whole-brain MRI dataset in existence. A post-mortem human brain scanned at 7T with 100 um isotropic resolution.
+Single-subject ultrahigh-resolution in-vivo MRI from Lüsebrink et al. 2021, acquired at 7T as a "human phantom" reference. T2 SPACE at 0.45 mm isotropic gives bright-CSF contrast across the full brain with physiologically intact subarachnoid space — what MGH cannot provide.
 
 | Field | Value |
 |-------|-------|
-| Resolution | 100 μm isotropic native; 200 μm and 500 μm derivatives included |
-| Coverage | Whole brain, ex vivo (no spinal cord); one subject (sub-EXC004) |
-| Format | NIfTI (.nii.gz) |
-| Size | **~95 GB** total (not 2 TB): 4× 13.6 GB raw flip angles (FA15/20/25/30) + 38 GB derivatives + 6 GB TIFF stacks + 1 GB videos |
-| Recommended subset | 200 μm volumes only (**~3.2 GB**, 3 files under `derivatives/…/processed_data/`) + 500 μm MNI quick-test (~74 MB) |
-| Access | Free, no account required; public `s3://openneuro.org/ds002179/` |
-| Download | [OpenNeuro ds002179](https://openneuro.org/datasets/ds002179) |
-| Paper | [Edlow et al., Scientific Data 2019](https://www.nature.com/articles/s41597-019-0254-8) (Open Access) |
+| Resolution | 0.45 mm isotropic (raw T2 SPACE); T1w MP2RAGE also available |
+| Coverage | Whole brain, **in vivo**, physiologically intact CSF |
+| Format | NIfTI (BIDS-organized) |
+| Subject | `sub-yv98` (the author), session `ses-3777` (primary T2 SPACE session) |
+| Size (pipeline subset) | ~325 MB — raw T1w + T2w + bias-corrected derivatives + sidecars |
+| Access | Free, no account required; public `s3://openneuro.org/ds003563/` |
+| Download | [OpenNeuro ds003563](https://doi.org/10.18112/openneuro.ds003563.v1.0.1) |
+| Paper | [Lüsebrink et al., Scientific Data 2021](https://www.nature.com/articles/s41597-021-00923-w) (Open Access) |
 
-**Recommended starting point:** The three 200 μm NIfTIs under `derivatives/sub-EXC004/processed_data/` — one in MNI space (pre-registered), two in native space (reoriented + cropped + downsampled). Sufficient for SynthSeg and still well beyond clinical resolution. Included for pipeline use by `download_mgh_100um.sh` alongside the tiny 500 μm MNI volume for quick-test runs.
+**Use in pipeline:**
+- **Phase 2 (segmentation)**: `sub-yv98_T2w_biasCorrected.nii.gz` is the default SynthSeg input. Bias-corrected and contrast-agnostic segmentation recovers ventricles, extraventricular CSF, and cortical structures.
+- **Phase 4 (manual refinement)**: the raw T2 SPACE volume is the primary reference image in Slicer. Bright-CSF contrast makes cisterns, foramina, and the cerebral aqueduct dramatically easier to trace than on a T1-weighted volume.
+- **Phase 8 (LBM microstructure)**: in-vivo sulcal SAS geometry provides defensible boundary widths for the raycast-based SAS-width sampling. Fine-structure permeability calibration still comes from Rossinelli SRµCT, not from the MRI.
 
-**Use in pipeline:** Primary anatomical reference for brain CSF structures. Used in Phases 2 (SynthSeg input) and 4 (manual segmentation reference for foramina, cisterns, aqueduct).
+**Pipeline file layout after Phase 1 download:**
+
+```
+raw/lusebrink_2021/sub-yv98/anat/
+├── sub-yv98_T1w.nii.gz                  # 89 MB raw MP2RAGE (co-registered reference)
+├── sub-yv98_T1w.json
+├── sub-yv98_T1w_biasCorrected.nii.gz    # 90 MB bias-corrected T1w
+├── sub-yv98_T2w.nii.gz                  # 71 MB raw 450 µm T2 SPACE
+├── sub-yv98_T2w.json
+└── sub-yv98_T2w_biasCorrected.nii.gz    # 73 MB SynthSeg input (brain_input default)
+```
+
+Session id is stripped from filenames during upload so downstream paths key only on the subject id.
 
 ### Spine Generic Dataset + PAM50 Template (Cohen-Adad et al., 2021)
 
@@ -53,6 +70,43 @@ The standard open-access dataset for spinal cord MRI, with the PAM50 standardize
 | Code | [GitHub (Blender scripts)](https://github.com/Joshua-M-maker/SpineNerveModelGenerator) |
 
 **Use in pipeline:** Supplements the Spine Generic dataset for the L1-S2 region where the thecal sac and cauda equina are difficult to resolve.
+
+## Optional (non-default) Datasets
+
+### MGH ds002179 — Ex-vivo 100 µm (optional, not in default pipeline)
+
+The highest spatial-resolution whole-brain MRI dataset available (post-mortem, 7T, 100 µm isotropic). **Not the default brain input** — ex-vivo fixation drains the subarachnoid space and collapses sulci, so its "CSF" compartment is a deformation artifact rather than a physiological fluid volume. See [ADR-001 in decisions.md](decisions.md).
+
+Retained in the dataset catalogue because its 200 µm cortical-ribbon detail will matter for future OCT-catheter SLAM validation work and any cortical-surface morphometrics where the pial boundary geometry needs to be as tight as possible.
+
+| Field | Value |
+|-------|-------|
+| Resolution | 100 µm isotropic native; 200 µm and 500 µm derivatives included |
+| Coverage | Whole brain, **ex vivo** (no spinal cord); one subject (`sub-EXC004`) |
+| Format | NIfTI (.nii.gz) |
+| Size | ~95 GB total; ~3.2 GB for the 200 µm derivatives + 74 MB 500 µm MNI quick-test |
+| Access | Free, no account required; public `s3://openneuro.org/ds002179/` |
+| Download | [OpenNeuro ds002179](https://openneuro.org/datasets/ds002179) |
+| Paper | [Edlow et al., Scientific Data 2019](https://www.nature.com/articles/s41597-019-0254-8) (Open Access) |
+
+**How to download (ad-hoc — not in default Phase 1):**
+
+```bash
+# Submit directly to Batch with a separate run_id:
+aws batch submit-job --profile neurobotika --region eu-central-1 \
+  --job-name mgh-download-ad-hoc \
+  --job-queue neurobotika-cpu \
+  --job-definition neurobotika-download-mgh \
+  --parameters subject=sub-EXC004,s3_dest=s3://neurobotika-data/runs/mgh-ref-only/raw/mgh_100um
+```
+
+Or run locally:
+
+```bash
+./pipeline/01_data_acquisition/run_downloads.sh \
+  --dataset mgh --subject sub-EXC004 \
+  --s3-dest s3://neurobotika-data/runs/mgh-ref-only/raw/mgh_100um
+```
 
 ## Phase 8 Validation Datasets
 

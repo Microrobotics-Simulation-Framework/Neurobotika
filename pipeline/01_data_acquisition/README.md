@@ -2,9 +2,11 @@
 
 Fetches three MRI datasets and uploads them to S3:
 
-- **MGH ds002179** (OpenNeuro): ex vivo brain at 200 μm (primary) and 500 μm (quick-test), pre-registered to MNI. Copied server-side from the public `s3://openneuro.org/` bucket.
+- **Lüsebrink 2021** (OpenNeuro ds003563): **in-vivo 450 µm T2 SPACE** for `sub-yv98` + co-registered T1w and bias-corrected derivatives. Copied server-side from the public `s3://openneuro.org/` bucket. This is the **default brain reference** — see [docs/decisions.md ADR-001](../../docs/decisions.md) for why we replaced MGH.
 - **spine-generic** (GitHub + git-annex): multi-site "single-subject" spinal dataset. One subject's worth of T1w/T2w/T2star/DWI, plus any manual labels.
 - **SpineNerveModelGenerator** (GitHub): lumbosacral modelling scripts and a handful of bundled sample meshes. *The actual MRI volumes referenced by the paper must be fetched manually per its data-availability section* — this script only captures what's automatable.
+
+**Optional (not in default Phase 1):** **MGH ds002179** (OpenNeuro, ex-vivo 200 µm). Retained as an ad-hoc downloader (`download-mgh` Batch job def still exists) for future cortical-ribbon / OCT-SLAM validation work. See `docs/datasets.md` for the ad-hoc submission command.
 
 ## Scripts
 
@@ -13,21 +15,44 @@ All scripts accept `--help`. The canonical entry point is `run_downloads.sh`, wh
 ### `run_downloads.sh` — dispatcher
 
 ```bash
-./run_downloads.sh --dataset {mgh|spine|lumbosacral} \
+./run_downloads.sh --dataset {lusebrink|spine|lumbosacral|mgh} \
                    [--subject SUB] \
                    --s3-dest s3://bucket/prefix
 ```
 
-Selects the correct per-dataset script and forwards arguments. `--subject` defaults to `sub-EXC004` (MGH) or `sub-douglas` (spine); ignored for lumbosacral.
+Selects the correct per-dataset script and forwards arguments. `--subject` defaults to `sub-yv98` (lusebrink), `sub-douglas` (spine), or `sub-EXC004` (mgh); ignored for lumbosacral.
 
-### `download_mgh_100um.sh`
+### `download_lusebrink_2021.sh` (default brain dataset)
+
+Server-side copy of the Lüsebrink 2021 450 µm T2 SPACE + co-registered T1w (raw + bias-corrected) from OpenNeuro ds003563's public bucket. `sub-yv98`, `ses-3777`.
+
+```bash
+./download_lusebrink_2021.sh \
+  --subject sub-yv98 \
+  --s3-dest s3://neurobotika-data/runs/run-001/raw/lusebrink_2021
+```
+
+Files copied (~325 MB total; session id stripped from filenames on upload):
+
+```
+<subject>_T1w.nii.gz                 89 MB    raw MP2RAGE 450 µm
+<subject>_T1w.json                             BIDS sidecar
+<subject>_T1w_biasCorrected.nii.gz   90 MB    N4 bias-corrected
+<subject>_T2w.nii.gz                 71 MB    raw T2 SPACE 450 µm (Slicer default)
+<subject>_T2w.json                             BIDS sidecar
+<subject>_T2w_biasCorrected.nii.gz   73 MB    SynthSeg input (default brain_input)
+```
+
+### `download_mgh_100um.sh` (optional, not in default Phase 1)
 
 Copies the four MGH 200 μm + 500 μm files for a given subject from the public OpenNeuro S3 bucket to your destination prefix. **No `openneuro-cli` or Node.js dependency.**
+
+Not wired into the default state-machine Phase 1 — MGH is ex-vivo and its CSF is fixation-collapsed (see [docs/decisions.md ADR-001](../../docs/decisions.md)). Kept for ad-hoc cortical-ribbon / OCT-SLAM work.
 
 ```bash
 ./download_mgh_100um.sh \
   --subject sub-EXC004 \
-  --s3-dest s3://neurobotika-data/runs/run-001/raw/mgh_100um
+  --s3-dest s3://neurobotika-data/runs/mgh-ref-only/raw/mgh_100um
 ```
 
 Specific files copied (per subject):
@@ -88,9 +113,11 @@ For a cloud run with `run_id=run-001`:
 
 ```
 s3://neurobotika-data/runs/run-001/raw/
-├── mgh_100um/<brain_subject>/
-│   ├── MNI/{200um,500um}.nii.gz
-│   └── downsampled_data/<subject>_*_200um.nii.gz
+├── lusebrink_2021/<brain_subject>/anat/
+│   ├── <brain_subject>_T1w.nii.gz            (+ .json)
+│   ├── <brain_subject>_T1w_biasCorrected.nii.gz
+│   ├── <brain_subject>_T2w.nii.gz            (+ .json)
+│   └── <brain_subject>_T2w_biasCorrected.nii.gz
 ├── spine_generic/<spine_subject>/
 │   ├── <spine_subject>/{anat,dwi}/*.nii.gz
 │   └── derivatives/labels/<spine_subject>/
@@ -102,9 +129,10 @@ s3://neurobotika-data/runs/run-001/raw/
 
 | Dataset | Subject | Size |
 |---|---|---|
-| MGH 200 μm + 500 μm | sub-EXC004 | ~3.3 GB |
+| Lüsebrink T1w + T2w (raw + bias-corrected) | sub-yv98 | ~325 MB |
 | spine-generic | sub-douglas | ~30 MB |
 | lumbosacral repo | n/a | ~110 MB |
-| **Total** |  | **~3.4 GB per run** |
+| **Total (default)** |  | **~465 MB per run** |
+| MGH 200 μm + 500 μm (optional, ad-hoc) | sub-EXC004 | ~3.3 GB |
 
-At $0.024/GB·month (S3 Standard, eu-central-1): ~$0.08/month per complete run. Reuse the same `run_id` across executions — Phase 1 will skip automatically via the state machine's idempotency check.
+At $0.024/GB·month (S3 Standard, eu-central-1): ~$0.01/month per default run. Reuse the same `run_id` across executions — Phase 1 will skip automatically via the state machine's idempotency check.

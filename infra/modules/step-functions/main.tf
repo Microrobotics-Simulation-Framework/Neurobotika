@@ -114,8 +114,8 @@ resource "aws_sfn_state_machine" "pipeline" {
   # Input contract:
   #
   #   {
-  #     "run_id":           "run-2026-04-18-001",
-  #     "brain_subject":    "sub-EXC004",
+  #     "run_id":           "run-2026-04-20-001",
+  #     "brain_subject":    "sub-yv98",           // Lüsebrink 2021 primary subject
   #     "spine_subject":    "sub-douglas",
   #     "run_training":     false,
   #     "stop_after_phase": 1       // optional; omit to run through to the end
@@ -167,18 +167,21 @@ resource "aws_sfn_state_machine" "pipeline" {
       PrepareContext = {
         Type = "Pass"
         Parameters = {
-          "brain_subject.$"       = "$.brain_subject"
-          "spine_subject.$"       = "$.spine_subject"
-          "run_id.$"              = "$.run_id"
-          "run_training.$"        = "$.run_training"
-          "stop_after_phase.$"    = "$.stop_after_phase"
-          "s3_root.$"             = "States.Format('s3://${local.data_bucket_name}/runs/{}', $.run_id)"
-          "raw_prefix.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw', $.run_id)"
-          "manifest_out.$"        = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/manifest.json', $.run_id)"
-          "mgh_dest.$"            = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/mgh_100um', $.run_id)"
-          "spine_dest.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic', $.run_id)"
-          "lumbosacral_dest.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lumbosacral', $.run_id)"
-          "brain_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/mgh_100um/{}/MNI/Synthesized_FLASH25_in_MNI_v2_200um.nii.gz', $.run_id, $.brain_subject)"
+          "brain_subject.$"    = "$.brain_subject"
+          "spine_subject.$"    = "$.spine_subject"
+          "run_id.$"           = "$.run_id"
+          "run_training.$"     = "$.run_training"
+          "stop_after_phase.$" = "$.stop_after_phase"
+          "s3_root.$"          = "States.Format('s3://${local.data_bucket_name}/runs/{}', $.run_id)"
+          "raw_prefix.$"       = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw', $.run_id)"
+          "manifest_out.$"     = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/manifest.json', $.run_id)"
+          "lusebrink_dest.$"   = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lusebrink_2021', $.run_id)"
+          "spine_dest.$"       = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic', $.run_id)"
+          "lumbosacral_dest.$" = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lumbosacral', $.run_id)"
+          # Default brain input: Lüsebrink 2021 bias-corrected T2 SPACE.
+          # T2 SPACE's bright-CSF contrast is ideal for both SynthSeg and
+          # Phase 4 manual refinement of the subarachnoid space.
+          "brain_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/lusebrink_2021/{}/anat/{}_T2w_biasCorrected.nii.gz', $.run_id, $.brain_subject, $.brain_subject)"
           "brain_output_dir.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/brain/{}', $.run_id, $.brain_subject)"
           "spine_input.$"         = "States.Format('s3://${local.data_bucket_name}/runs/{}/raw/spine_generic/{}/{}/anat/{}_T2w.nii.gz', $.run_id, $.spine_subject, $.spine_subject, $.spine_subject)"
           "spine_output_dir.$"    = "States.Format('s3://${local.data_bucket_name}/runs/{}/seg/spine/{}', $.run_id, $.spine_subject)"
@@ -222,18 +225,18 @@ resource "aws_sfn_state_machine" "pipeline" {
         Type = "Parallel"
         Branches = [
           {
-            StartAt = "Download_MGH"
+            StartAt = "Download_Lusebrink"
             States = {
-              Download_MGH = {
+              Download_Lusebrink = {
                 Type     = "Task"
                 Resource = "arn:aws:states:::batch:submitJob.sync"
                 Parameters = {
-                  JobName       = "phase1-download-mgh"
+                  JobName       = "phase1-download-lusebrink"
                   JobQueue      = var.cpu_job_queue_arn
-                  JobDefinition = lookup(var.job_definition_arns, "download-mgh", "")
+                  JobDefinition = lookup(var.job_definition_arns, "download-lusebrink", "")
                   Parameters = {
                     "subject.$" = "$.brain_subject"
-                    "s3_dest.$" = "$.mgh_dest"
+                    "s3_dest.$" = "$.lusebrink_dest"
                   }
                 }
                 End = true

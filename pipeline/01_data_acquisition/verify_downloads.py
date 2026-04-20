@@ -25,10 +25,9 @@ from typing import Any
 
 import click
 
-
 EXPECTED_DATASETS = {
-    "mgh_100um": {
-        "description": "MGH ds002179 ex vivo brain",
+    "lusebrink_2021": {
+        "description": "Lüsebrink 2021 in vivo 450 µm T2 SPACE (primary brain reference)",
         "glob": "*.nii.gz",
         "min_files": 1,
     },
@@ -41,6 +40,11 @@ EXPECTED_DATASETS = {
         "description": "SpineNerveModelGenerator (repo + optional MRI)",
         "glob": "*",
         "min_files": 0,  # MRI volumes arrive manually; repo clone only
+    },
+    "mgh_100um": {
+        "description": "MGH ds002179 ex vivo brain (optional; ad-hoc cortical-ribbon reference)",
+        "glob": "*.nii.gz",
+        "min_files": 0,  # demoted 2026-04-20: ex-vivo SAS is fixation-collapsed
     },
 }
 
