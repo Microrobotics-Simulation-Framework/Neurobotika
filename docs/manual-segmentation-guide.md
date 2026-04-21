@@ -152,7 +152,7 @@ aws s3 ls s3://neurobotika-data/runs/ --profile neurobotika --region eu-central-
 
 ```bash
 Slicer --python-script \
-  ~/MSF/Neurobotika/pipeline/04_manual_refinement/slicer_scripts/pull_from_s3.py &
+  $HOME/MSF/Neurobotika/pipeline/04_manual_refinement/slicer_scripts/pull_from_s3.py &
 ```
 
 This does **all of the following automatically**:

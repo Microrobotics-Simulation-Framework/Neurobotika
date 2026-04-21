@@ -103,6 +103,23 @@ CSF_LABEL_SPEC = [
     (20, "choroid_plexus",                (100, 100, 100)),
 ]
 
+# SynthSeg (FreeSurfer aseg) → Neurobotika CSF label id.
+# Only CSF-relevant aseg labels are carried over; the rest of SynthSeg's
+# 108-label output (cortical parcellation, white matter, subcortical nuclei,
+# etc.) stays as a read-only reference overlay, NOT merged into the
+# Neurobotika manual segmentation node.
+ASEG_TO_NEUROBOTIKA = {
+    4:  1,   # Left-Lateral-Ventricle     -> left_lateral_ventricle
+    5:  1,   # Left-Inf-Lat-Vent          -> left_lateral_ventricle (inferior horn)
+    43: 2,   # Right-Lateral-Ventricle    -> right_lateral_ventricle
+    44: 2,   # Right-Inf-Lat-Vent         -> right_lateral_ventricle
+    14: 3,   # 3rd-Ventricle              -> third_ventricle
+    15: 5,   # 4th-Ventricle              -> fourth_ventricle
+    24: 17,  # CSF (extraventricular SAS) -> cerebral_subarachnoid_space
+    31: 20,  # Left-choroid-plexus        -> choroid_plexus
+    63: 20,  # Right-choroid-plexus       -> choroid_plexus
+}
+
 
 # ---------------------------------------------------------------------------
 # Logic
@@ -193,6 +210,98 @@ def download_from_s3() -> dict:
     return resolved
 
 
+def _prefill_from_synthseg(seg_node, brain_label_node, tmp_dir: Path) -> int:
+    """Copy CSF-relevant aseg labels from Phase 2 SynthSeg into the
+    Neurobotika manual segmentation node, remapped to the Neurobotika
+    1–20 schema.
+
+    This is the "start with the work SynthSeg already did" step: on exit
+    you have non-empty segments for the ventricles, extraventricular SAS,
+    and choroid plexus; the 13 structures SynthSeg cannot produce
+    (aqueduct, foramina, individual cisterns, foramen magnum junction)
+    stay empty and are the work you do in Segment Editor.
+
+    Uses the vtkImageThreshold → ImportLabelmapToSegmentationNode dance:
+    extract a single aseg value into a temporary binary labelmap, import
+    it into the Neurobotika segment corresponding to that value's mapped
+    Neurobotika id, accumulating per-segment.
+
+    Returns the number of aseg labels successfully transferred.
+    """
+    import slicer
+    import nibabel as nib
+    import numpy as np
+
+    if brain_label_node is None:
+        return 0
+
+    # Read the SynthSeg labelmap pixel data once via nibabel — simpler
+    # than round-tripping through Slicer's VTK image conversion for each
+    # label. We build a per-Neurobotika-label binary mask in numpy then
+    # hand it to Slicer.
+    seg_path = None
+    for f in tmp_dir.rglob("brain_seg.nii.gz"):
+        seg_path = f
+        break
+    if seg_path is None or not seg_path.exists():
+        return 0
+
+    img = nib.load(str(seg_path))
+    data = np.asarray(img.dataobj).astype(np.int32)
+
+    # Group aseg ids by Neurobotika id — more than one aseg can map into
+    # the same Neurobotika label (e.g. 4 + 5 → 1, 31 + 63 → 20).
+    grouped: dict[int, list[int]] = {}
+    for aseg_id, nb_id in ASEG_TO_NEUROBOTIKA.items():
+        grouped.setdefault(nb_id, []).append(aseg_id)
+
+    segmentation = seg_node.GetSegmentation()
+    transferred = 0
+
+    for nb_id, aseg_ids in grouped.items():
+        # Find the Neurobotika segment by its LabelValue tag.
+        target_segment_id = None
+        for i in range(segmentation.GetNumberOfSegments()):
+            sid = segmentation.GetNthSegmentID(i)
+            s = segmentation.GetSegment(sid)
+            if s and s.GetTag("LabelValue") == "":
+                continue
+            tag_value = ""
+            s.GetTag("LabelValue", tag_value)  # Slicer's GetTag signature varies
+            if tag_value == str(nb_id):
+                target_segment_id = sid
+                break
+        # Fallback: match by name from CSF_LABEL_SPEC
+        if target_segment_id is None:
+            expected_name = next((n for lbl, n, _ in CSF_LABEL_SPEC if lbl == nb_id), None)
+            if expected_name:
+                target_segment_id = segmentation.GetSegmentIdBySegmentName(expected_name)
+        if target_segment_id is None:
+            continue
+
+        # Build the union mask across all aseg values that map to this nb_id.
+        mask = np.isin(data, aseg_ids).astype(np.uint8)
+        if mask.sum() == 0:
+            continue
+
+        # Create a transient labelmap node with the mask, borrowing the
+        # affine / geometry from the brain_label_node so Slicer knows
+        # which voxel corresponds to which segment voxel.
+        tmp_lm = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLLabelMapVolumeNode", f"tmp_prefill_{nb_id}")
+        tmp_lm.Copy(brain_label_node)
+        slicer.util.updateVolumeFromArray(tmp_lm, mask)
+
+        # Import this single-class labelmap into the Neurobotika segment.
+        ok = slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(
+            tmp_lm, seg_node, target_segment_id)
+        if ok:
+            transferred += 1
+        slicer.mrmlScene.RemoveNode(tmp_lm)
+
+    return transferred
+
+
 def setup_slicer_workspace(files: dict):
     """Load volumes into Slicer and configure the viewer + segmentation node."""
     import slicer
@@ -212,11 +321,27 @@ def setup_slicer_workspace(files: dict):
         print("Loading brain T1w (co-registered reference)...")
         slicer.util.loadVolume(files["brain_T1w.nii.gz"])
 
-    # Phase 2 seg as a label overlay (so the user knows what's already segmented)
+    # Phase 2 seg as a label volume (for reference overlay AND for
+    # prefilling Neurobotika's ventricle/SAS segments below).
     brain_label_node = None
     if "brain_seg.nii.gz" in files:
         print("Loading brain segmentation as label overlay...")
         brain_label_node = slicer.util.loadLabelVolume(files["brain_seg.nii.gz"])
+
+    # Also load Phase 2 seg as a SEPARATE, read-only segmentation node
+    # that the user can toggle aseg labels on/off in (answers "what does
+    # SynthSeg think is here?" without cluttering the manual node).
+    synthseg_seg_node = None
+    if brain_label_node is not None:
+        synthseg_seg_node = slicer.mrmlScene.AddNewNodeByClass(
+            "vtkMRMLSegmentationNode", "SynthSeg_reference")
+        synthseg_seg_node.CreateDefaultDisplayNodes()
+        if brain_node is not None:
+            synthseg_seg_node.SetReferenceImageGeometryParameterFromVolumeNode(brain_node)
+        slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(
+            brain_label_node, synthseg_seg_node)
+        # Hide by default — user toggles it on when they need orientation.
+        synthseg_seg_node.GetDisplayNode().SetVisibility(False)
 
     # Phase 3 cord + canal as secondary volumes (visible via the Data tab)
     for key in ("spine_cord.nii.gz", "spine_canal.nii.gz", "spine_multilabel.nii.gz", "spine_T2w.nii.gz"):
@@ -237,7 +362,9 @@ def setup_slicer_workspace(files: dict):
             composite.SetBackgroundVolumeID(brain_node.GetID())
             if brain_label_node is not None:
                 composite.SetLabelVolumeID(brain_label_node.GetID())
-                composite.SetLabelOpacity(0.3)
+                # 0.5 is more visible than 0.3 on a bright-CSF T2 SPACE;
+                # user can dial it down in the slice toolbar if preferred.
+                composite.SetLabelOpacity(0.5)
 
     # ---- Create the manual segmentation node with the 20-label schema ready --------
 
@@ -260,6 +387,12 @@ def setup_slicer_workspace(files: dict):
         seg = segmentation.GetSegment(segment_id)
         if seg is not None:
             seg.SetTag("LabelValue", str(label_id))
+
+    # ---- Prefill ventricles / SAS / choroid from SynthSeg --------------------------
+
+    if brain_label_node is not None:
+        transferred = _prefill_from_synthseg(seg_node, brain_label_node, LOCAL_DIR)
+        print(f"  Prefilled {transferred} Neurobotika segment(s) from SynthSeg aseg labels.")
 
     # Switch to Segment Editor module. In Slicer 5.x the widget's public
     # Python API for wiring the active segmentation node changed; the
@@ -292,9 +425,13 @@ def setup_slicer_workspace(files: dict):
     print(f"  Brain subject: {BRAIN_SUBJECT} | Spine subject: {SPINE_SUBJECT}")
     print(f"  Local staging dir: {LOCAL_DIR}")
     print("")
-    print("  Background   : Lüsebrink 450 µm T2 SPACE (CSF bright)")
-    print("  Label overlay: Phase 2 SynthSeg output (30 % opacity)")
-    print("  Other loaded : brain_T1w, spine_cord, spine_canal, spine_multilabel, spine_T2w")
+    print("  Background     : Lüsebrink 450 µm T2 SPACE (CSF bright)")
+    print("  Label overlay  : Phase 2 SynthSeg output (50 % opacity, toggleable)")
+    print("  SynthSeg ref   : separate 'SynthSeg_reference' segmentation node (hidden by default,")
+    print("                   enable via Data module to see any aseg label)")
+    print("  Manual seg     : CSF_Manual_<run_id> — ventricles/SAS/choroid prefilled from aseg,")
+    print("                   13 empty segments (aqueduct, foramina, cisterns, fm junction) for you")
+    print("  Other loaded   : brain_T1w, spine_cord, spine_canal, spine_multilabel, spine_T2w")
     print(f"  Segmentation : {seg_node.GetName()}  (20 empty segments pre-configured)")
     print("")
     print("  NEXT:")
