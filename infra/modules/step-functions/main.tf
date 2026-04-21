@@ -487,16 +487,33 @@ resource "aws_sfn_state_machine" "pipeline" {
         }]
       }
 
+      # Phase 4: pause for manual refinement in Slicer.
+      #
+      # The SNS message carries the *pipeline* run_id explicitly —
+      # NOT the Step Functions execution name. Those differ whenever
+      # Phase 4 is resumed or rerun (execution name is fresh each time,
+      # run_id stays stable across executions against the same S3 data).
+      # pull_from_s3.py reads run_id, not execution_name; including
+      # both + a clearly-labelled snippet prevents the "I set
+      # NEUROBOTIKA_RUN_ID to the execution name and got nothing back"
+      # failure mode.
       Phase4_Notify = {
         Type     = "Task"
         Resource = "arn:aws:states:::sns:publish.waitForTaskToken"
         Parameters = {
           TopicArn = aws_sns_topic.manual_notify.arn
           Message = {
-            "pipeline_run.$" = "$$.Execution.Name"
-            "message"        = "Phases 2-3 complete. Please perform manual segmentation in 3D Slicer, then resume the pipeline."
-            "task_token.$"   = "$$.Task.Token"
-            "resume_command" = "aws stepfunctions send-task-success --task-token <TOKEN> --task-output '{}'"
+            "message"            = "Neurobotika Phase 4 — manual segmentation required. Phases 2 and 3 are complete; your brain and spine segmentations are waiting in S3. Set the environment variables below, launch Slicer with pull_from_s3.py, paint the CSF structures per docs/manual-segmentation-guide.md, then run push_merged.py with --task-token to resume the pipeline."
+            "run_id.$"           = "$.run_id"
+            "brain_subject.$"    = "$.brain_subject"
+            "spine_subject.$"    = "$.spine_subject"
+            "s3_root.$"          = "$.s3_root"
+            "brain_output_dir.$" = "$.brain_output_dir"
+            "spine_output_dir.$" = "$.spine_output_dir"
+            "execution_name.$"   = "$$.Execution.Name"
+            "task_token.$"       = "$$.Task.Token"
+            "env_vars_to_set"    = "export NEUROBOTIKA_RUN_ID=<run_id from above>; export NEUROBOTIKA_BRAIN_SUBJECT=<brain_subject>; export NEUROBOTIKA_SPINE_SUBJECT=<spine_subject>; export NEUROBOTIKA_TASK_TOKEN=<task_token>"
+            "resume_command"     = "python pipeline/04_manual_refinement/push_merged.py --run-id $NEUROBOTIKA_RUN_ID --input $HOME/neurobotika-slicer/merged_labels.nii.gz --task-token $NEUROBOTIKA_TASK_TOKEN"
           }
         }
         ResultPath = "$.phase4"

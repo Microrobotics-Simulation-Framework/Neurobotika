@@ -108,6 +108,56 @@ CSF_LABEL_SPEC = [
 # Logic
 # ---------------------------------------------------------------------------
 
+def _preflight_run_id() -> None:
+    """Sanity-check that the configured NEUROBOTIKA_RUN_ID actually points
+    at data in S3 before we try to launch Slicer against it.
+
+    A common failure mode: the user copies the Step Functions *execution
+    name* (fresh per execution) from the AWS console instead of the
+    pipeline *run_id* (stable across executions for the same S3 data).
+    Those usually differ — resumes, retries, and phase-specific re-
+    launches all get new execution names while reusing the same run_id.
+    When the two are confused, this script previously ran to completion
+    but loaded nothing visible in Slicer.
+
+    Check here that at least one expected upstream output (the Phase 2
+    brain seg or the Phase 3 spine seg) exists under the run_id prefix.
+    If not, list sibling run_ids in S3 so the user can pick the right one.
+    """
+    import subprocess
+
+    key_prefix = f"runs/{RUN_ID}/seg/"
+    probe = subprocess.run(
+        ["aws", "s3", "ls", f"s3://{BUCKET}/{key_prefix}", "--recursive"],
+        capture_output=True, text=True,
+    )
+
+    if probe.returncode == 0 and probe.stdout.strip():
+        return  # looks good
+
+    print("")
+    print("=" * 64)
+    print(f"  ERROR: no Phase 2/3 outputs under s3://{BUCKET}/{key_prefix}")
+    print(f"  NEUROBOTIKA_RUN_ID='{RUN_ID}' is probably wrong.")
+    print("")
+    print("  Common cause: you copied the Step Functions *execution name*")
+    print("  from the AWS console (fresh per execution) instead of the")
+    print("  pipeline *run_id* from the SNS email body. The run_id is")
+    print("  stable across executions; the execution name is not.")
+    print("")
+    print("  Existing run_ids in S3 (pick the one whose seg/ has your data):")
+    ls = subprocess.run(
+        ["aws", "s3", "ls", f"s3://{BUCKET}/runs/"],
+        capture_output=True, text=True,
+    )
+    for line in ls.stdout.splitlines():
+        parts = line.strip().split()
+        if parts and parts[0] == "PRE":
+            print(f"    {parts[1].rstrip('/')}")
+    print("=" * 64)
+    raise SystemExit(1)
+
+
 def download_from_s3() -> dict:
     """Fetch all required files from S3 into LOCAL_DIR.
 
@@ -243,5 +293,6 @@ def setup_slicer_workspace(files: dict):
 
 
 # Entry point when exec'd inside Slicer's console
+_preflight_run_id()
 files = download_from_s3()
 setup_slicer_workspace(files)

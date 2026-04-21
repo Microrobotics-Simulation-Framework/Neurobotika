@@ -114,26 +114,39 @@ Phase 4 fires when a Step Functions execution reaches it. You get an email at th
 
 ### 1. Capture the task token + run context
 
-From the email, copy the `task_token` value. In your shell:
+The Phase 4 SNS email is a JSON body with fields `run_id`, `brain_subject`, `spine_subject`, `task_token`, and `execution_name`. **Use `run_id` — NOT `execution_name`.** They are different:
+
+- `run_id` names the S3 prefix where your data lives. Stable across executions for the same pipeline run. Whatever you originally passed to `start-execution`.
+- `execution_name` is a per-execution identifier Step Functions assigns. New value every time you relaunch, even for the same run_id. **Never used to look up data.**
+
+Confusing the two is the #1 way this step goes wrong — you'd get an empty Slicer workspace because nothing lives under `runs/<execution_name>/`.
+
+Export the values verbatim from the email's `run_id` / `brain_subject` / `spine_subject` / `task_token` fields:
 
 ```bash
 export NEUROBOTIKA_TASK_TOKEN='eyJ...copy-from-email...'
-export NEUROBOTIKA_RUN_ID='run-2026-04-20-...'   # same id you started the pipeline with
-export NEUROBOTIKA_BRAIN_SUBJECT='sub-yv98'      # default — Lüsebrink
-export NEUROBOTIKA_SPINE_SUBJECT='sub-douglas'   # default — spine-generic
+export NEUROBOTIKA_RUN_ID='run-2026-04-20-...'          # <-- email's run_id field
+export NEUROBOTIKA_BRAIN_SUBJECT='sub-yv98'             # <-- email's brain_subject field
+export NEUROBOTIKA_SPINE_SUBJECT='sub-douglas'          # <-- email's spine_subject field
 export NEUROBOTIKA_LOCAL_DIR="$HOME/neurobotika-slicer"
 export AWS_PROFILE=neurobotika
 export AWS_DEFAULT_REGION=eu-central-1
 ```
 
-Sanity-check that the previous phases actually produced what you expect:
+Sanity-check that the previous phases actually produced data at this run_id:
 
 ```bash
 aws s3 ls "s3://neurobotika-data/runs/${NEUROBOTIKA_RUN_ID}/seg/brain/${NEUROBOTIKA_BRAIN_SUBJECT}/"  --recursive
 aws s3 ls "s3://neurobotika-data/runs/${NEUROBOTIKA_RUN_ID}/seg/spine/${NEUROBOTIKA_SPINE_SUBJECT}/" --recursive
 ```
 
-Both should list files. If either is empty, something's wrong — don't start Phase 4; debug the upstream phase first.
+Both must list files. If either is empty the run_id is wrong — **don't proceed**. `pull_from_s3.py` will also preflight-check this and list all available run_ids in S3 if the configured one is empty, so you can find the right value.
+
+To find run_ids in S3 directly:
+
+```bash
+aws s3 ls s3://neurobotika-data/runs/ --profile neurobotika --region eu-central-1
+```
 
 ### 2. Launch Slicer with the pull script
 
