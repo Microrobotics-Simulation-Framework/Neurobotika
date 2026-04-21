@@ -204,6 +204,15 @@ resource "aws_sfn_state_machine" "pipeline" {
       # -----------------------------------------------------------------
       # Phase 1 — downloads + verify.
       # Skip-marker: raw/manifest.json written by the verify job.
+      #
+      # Note on Catch: on a first-time run for a run_id the HeadObject
+      # returns a 404 (S3.NoSuchKey / S3.NotFound) because nothing is
+      # there yet. That isn't a failure — the Catch routes the flow to
+      # Phase1_Download, which is the expected behaviour. The execution
+      # history will show a TaskFailed event for Check_Phase1 in that
+      # case; it's informational, not a real failure. Subsequent runs
+      # with the same run_id find the manifest and skip straight to
+      # Gate_AfterPhase1.
       # -----------------------------------------------------------------
       Check_Phase1 = {
         Type     = "Task"
@@ -215,7 +224,10 @@ resource "aws_sfn_state_machine" "pipeline" {
         ResultPath = "$.phase1_check"
         Next       = "Gate_AfterPhase1"
         Catch = [{
-          ErrorEquals = ["States.ALL"]
+          # Only catch the "object not found" variants. Any other S3
+          # error (permissions, throttling, service outage) propagates
+          # up as a real failure so it isn't silently swallowed.
+          ErrorEquals = ["S3.NoSuchKeyException", "S3.NotFoundException", "S3.404"]
           ResultPath  = "$.phase1_check"
           Next        = "Phase1_Download"
         }]
@@ -453,6 +465,11 @@ resource "aws_sfn_state_machine" "pipeline" {
       # Phase 4 + Phase 5 — we gate them together on phase 5's output:
       # if the registered volume exists, phase 4's manual step was done
       # previously and phase 5 already produced output, so skip both.
+      #
+      # Same Catch convention as Check_Phase1: the expected first-run
+      # 404 is caught and routed to Phase4_Notify. The visible
+      # TaskFailed event in the execution history is informational, not
+      # a real failure. Any other S3 error propagates.
       # -----------------------------------------------------------------
       Check_Phase5 = {
         Type     = "Task"
@@ -464,7 +481,7 @@ resource "aws_sfn_state_machine" "pipeline" {
         ResultPath = "$.phase5_check"
         Next       = "Gate_AfterPhase5"
         Catch = [{
-          ErrorEquals = ["States.ALL"]
+          ErrorEquals = ["S3.NoSuchKeyException", "S3.NotFoundException", "S3.404"]
           ResultPath  = "$.phase5_check"
           Next        = "Phase4_Notify"
         }]
