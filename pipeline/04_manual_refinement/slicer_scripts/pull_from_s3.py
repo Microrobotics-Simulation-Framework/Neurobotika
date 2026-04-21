@@ -245,28 +245,44 @@ def setup_slicer_workspace(files: dict):
     seg_node.SetName(f"CSF_Manual_{RUN_ID}")
     if brain_node is not None:
         seg_node.SetReferenceImageGeometryParameterFromVolumeNode(brain_node)
+    # Must be called BEFORE adding segments in Slicer 5.x, otherwise segments
+    # attach to a non-existent display node and silently don't render
+    # ("Invalid segmentation display node" warnings, empty Segments panel).
+    seg_node.CreateDefaultDisplayNodes()
 
     segmentation = seg_node.GetSegmentation()
     for label_id, name, rgb in CSF_LABEL_SPEC:
         color = (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
-        # Segment is named after the structure; the label integer is
-        # recorded as a tag so export can preserve it.
-        segment = slicer.vtkSegment()
-        segment.SetName(name)
-        segment.SetColor(*color)
-        segment.SetTag("LabelValue", str(label_id))
-        segmentation.AddSegment(segment, name)
+        # AddEmptySegment(segmentId, name, color) wires the segment to the
+        # display node correctly. The label integer goes in a tag so the
+        # NIfTI export preserves our numbering.
+        segment_id = segmentation.AddEmptySegment(name, name, color)
+        seg = segmentation.GetSegment(segment_id)
+        if seg is not None:
+            seg.SetTag("LabelValue", str(label_id))
 
-    # Switch to Segment Editor
+    # Switch to Segment Editor module. In Slicer 5.x the widget's public
+    # Python API for wiring the active segmentation node changed; the
+    # MRML-based parameter node is the stable way to do it:
     slicer.util.selectModule("SegmentEditor")
 
-    # Set the Segment Editor's active segmentation + source volume
-    # (mostly a convenience — user still has to click into the module)
-    seg_editor = slicer.modules.segmenteditor.widgetRepresentation().self()
-    if seg_editor is not None:
-        seg_editor.setSegmentationNode(seg_node)
-        if brain_node is not None:
-            seg_editor.setSourceVolumeNode(brain_node)
+    editor_node = slicer.mrmlScene.AddNewNodeByClass(
+        "vtkMRMLSegmentEditorNode", "NeurobotikaSegmentEditor")
+    editor_node.SetAndObserveSegmentationNode(seg_node)
+    if brain_node is not None:
+        editor_node.SetAndObserveSourceVolumeNode(brain_node)
+
+    # Point the Segment Editor widget at our parameter node if the method
+    # exists on this Slicer version. Wrap in try/except so a future API
+    # change doesn't crash the whole setup again — user can manually
+    # select the segmentation in the Segment Editor panel as a fallback.
+    try:
+        seg_editor = slicer.modules.segmenteditor.widgetRepresentation().self()
+        if hasattr(seg_editor, "setMRMLSegmentEditorNode"):
+            seg_editor.setMRMLSegmentEditorNode(editor_node)
+    except Exception as e:
+        print(f"  (Segment Editor widget auto-wiring skipped: {e})")
+        print("  In the Segment Editor panel, pick the CSF_Manual_... segmentation manually.")
 
     # ---- Summary -----------------------------------------------------------------
 
